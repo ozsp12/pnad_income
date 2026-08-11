@@ -1,0 +1,56 @@
+name: Execute PNAD notebook
+
+on:
+  push:
+    branches:
+      - agent/notebook-execution
+  workflow_dispatch:
+
+jobs:
+  execute:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install project
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e '.[dev,notebooks]'
+      - name: Run tests
+        run: pytest -q
+      - name: Execute notebook
+        working-directory: notebooks
+        run: |
+          jupyter nbconvert --to notebook --execute pnad_income_pipeline.ipynb --output pnad_income_pipeline_executed.ipynb --ExecutePreprocessor.timeout=1200
+      - name: Extract notebook output
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          nb = json.loads(Path('notebooks/pnad_income_pipeline_executed.ipynb').read_text(encoding='utf-8'))
+          blocks=[]
+          for i, cell in enumerate(nb.get('cells', []), start=1):
+              if cell.get('cell_type') != 'code':
+                  continue
+              blocks.append(f'\n=== CODE CELL {i} ===\n')
+              for out in cell.get('outputs', []):
+                  if out.get('output_type') == 'stream':
+                      text=out.get('text','')
+                      blocks.append(''.join(text) if isinstance(text,list) else text)
+                  data=out.get('data',{})
+                  if 'text/plain' in data:
+                      text=data['text/plain']
+                      blocks.append((''.join(text) if isinstance(text,list) else text)+'\n')
+          Path('notebook_output.txt').write_text(''.join(blocks),encoding='utf-8')
+          PY
+      - name: Upload execution artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pnad-notebook-execution
+          path: |
+            notebooks/pnad_income_pipeline_executed.ipynb
+            notebook_output.txt
