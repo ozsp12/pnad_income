@@ -17,12 +17,33 @@ def test_validate_database_requires_income():
         raise AssertionError("validate_database should reject a missing income column")
 
 
+def test_validate_database_normalizes_portuguese_fields():
+    frame = pd.DataFrame({"ano": [2020, 2021], "renda": [100.0, 200.0]})
+    validated = validate_database(frame)
+    assert validated.columns.tolist() == ["year", "income"]
+    assert validated["year"].tolist() == [2020, 2021]
+    assert validated["income"].tolist() == [100.0, 200.0]
+
+
 def test_directory_loader_infers_year(tmp_path: Path):
     pd.DataFrame({"income": [0.0, 100.0]}).to_parquet(tmp_path / "pnad_refined_2020.parquet")
     pd.DataFrame({"income": [50.0, 200.0]}).to_parquet(tmp_path / "pnad_refined_2021.parquet")
     panel = load_database(tmp_path)
     assert sorted(panel["year"].unique().tolist()) == [2020, 2021]
     assert len(panel) == 4
+
+
+def test_directory_loader_reads_published_portuguese_schema(tmp_path: Path):
+    pd.DataFrame({"renda": [0.0, 100.0], "ano": [2020, 2020]}).to_parquet(
+        tmp_path / "pnad_refined_2020.parquet"
+    )
+    pd.DataFrame({"renda": [50.0, 200.0], "ano": [2021, 2021]}).to_parquet(
+        tmp_path / "pnad_refined_2021.parquet"
+    )
+    panel = load_database(tmp_path)
+    assert panel.columns.tolist() == ["income", "year"] or panel.columns.tolist() == ["year", "income"]
+    assert sorted(panel["year"].unique().tolist()) == [2020, 2021]
+    assert panel["income"].sum() == 350.0
 
 
 def test_pipeline_runs_from_annual_parquets(tmp_path: Path):
