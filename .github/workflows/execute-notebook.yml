@@ -1,0 +1,46 @@
+name: Verify PNAD notebook
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  execute:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install project
+        run: pip install -e '.[dev,notebooks]'
+      - name: Test and execute
+        run: |
+          pytest -q
+          cd notebooks
+          jupyter nbconvert --to notebook --execute pnad_income_pipeline.ipynb --output pnad_income_pipeline_executed.ipynb --ExecutePreprocessor.timeout=1200
+      - name: Export key results
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          nb=json.loads(Path('notebooks/pnad_income_pipeline_executed.ipynb').read_text(encoding='utf-8'))
+          blocks=[]
+          for i,cell in enumerate(nb.get('cells',[]),1):
+              if cell.get('cell_type')!='code': continue
+              blocks.append(f'\n=== CODE CELL {i} ===\n')
+              for item in cell.get('outputs',[]):
+                  if item.get('output_type')=='stream':
+                      t=item.get('text',''); blocks.append(''.join(t) if isinstance(t,list) else t)
+                  d=item.get('data',{})
+                  if 'text/plain' in d:
+                      t=d['text/plain']; blocks.append((''.join(t) if isinstance(t,list) else t)+'\n')
+          Path('notebook_output.txt').write_text(''.join(blocks),encoding='utf-8')
+          print(''.join(blocks))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pnad-notebook-final
+          path: |
+            notebooks/pnad_income_pipeline_executed.ipynb
+            notebook_output.txt
