@@ -1,0 +1,47 @@
+name: Execute PNAD notebook
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  execute:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install project
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e '.[dev,notebooks]'
+      - name: Run tests
+        run: pytest -q
+      - name: Execute notebook
+        working-directory: notebooks
+        run: jupyter nbconvert --to notebook --execute pnad_income_pipeline.ipynb --output pnad_income_pipeline_executed.ipynb --ExecutePreprocessor.timeout=1200
+      - name: Extract notebook text output
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          nb=json.loads(Path('notebooks/pnad_income_pipeline_executed.ipynb').read_text(encoding='utf-8'))
+          out=[]
+          for i,cell in enumerate(nb.get('cells',[]),1):
+              if cell.get('cell_type')!='code': continue
+              out.append(f'\n=== CODE CELL {i} ===\n')
+              for item in cell.get('outputs',[]):
+                  if item.get('output_type')=='stream':
+                      text=item.get('text',''); out.append(''.join(text) if isinstance(text,list) else text)
+                  text=item.get('data',{}).get('text/plain')
+                  if text: out.append((''.join(text) if isinstance(text,list) else text)+'\n')
+          Path('notebook_output.txt').write_text(''.join(out),encoding='utf-8')
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pnad-notebook-execution
+          path: |
+            notebooks/pnad_income_pipeline_executed.ipynb
+            notebook_output.txt
