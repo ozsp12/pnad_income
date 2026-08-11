@@ -1,0 +1,393 @@
+"""Persistence of reproducible analysis products under the project output tree.
+
+This module keeps file-writing concerns separate from statistical computation and
+plot construction.  The notebook can therefore display figures interactively
+while also persisting the same scientific products to disk in a deterministic
+layout.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Iterable
+
+import matplotlib.pyplot as plt
+import pandas as pd
+
+from .pipeline import PipelineResults, pipeline_overview
+from .plotting import (
+    plot_ccdf,
+    plot_ccdf_grid,
+    plot_gini_evolution,
+    plot_histogram,
+    plot_histogram_grid,
+    plot_lorenz_curve,
+    plot_lorenz_grid,
+    plot_measure_comparison,
+    plot_measure_comparison_grid,
+)
+
+
+@dataclass(frozen=True)
+class OutputPaths:
+    """Canonical output directories used by the scientific workflow."""
+
+    root: Path
+    figures: Path
+    tables: Path
+    reports: Path
+
+
+def prepare_output_paths(output_root: str | Path) -> OutputPaths:
+    """Create and return the canonical output directory tree."""
+    root = Path(output_root).expanduser().resolve()
+    figures = root / "figures"
+    tables = root / "tables"
+    reports = root / "reports"
+    for path in (root, figures, tables, reports):
+        path.mkdir(parents=True, exist_ok=True)
+    return OutputPaths(root=root, figures=figures, tables=tables, reports=reports)
+
+
+def build_diagnostics(results: PipelineResults) -> pd.DataFrame:
+    """Build the final missingness and numerical-support diagnostic table."""
+    columns = [
+        column
+        for column in (
+            "income",
+            "income_adj",
+            "income_effective",
+            "income_effective_adj",
+        )
+        if column in results.panel.columns
+    ]
+    return pd.DataFrame(
+        {
+            "column": columns,
+            "non_missing": [int(results.panel[column].notna().sum()) for column in columns],
+            "missing": [int(results.panel[column].isna().sum()) for column in columns],
+            "minimum": [results.panel[column].min() for column in columns],
+            "maximum": [results.panel[column].max() for column in columns],
+        }
+    )
+
+
+def save_table(
+    frame: pd.DataFrame,
+    path: str | Path,
+    *,
+    index: bool = False,
+) -> Path:
+    """Save a DataFrame using a format determined from the file extension."""
+    destination = Path(path)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    suffix = destination.suffix.lower()
+    if suffix == ".csv":
+        frame.to_csv(destination, index=index)
+    elif suffix == ".parquet":
+        frame.to_parquet(destination, index=index)
+    elif suffix in {".xlsx", ".xls"}:
+        frame.to_excel(destination, index=index)
+    else:
+        raise ValueError(f"Unsupported table output format: {suffix}")
+    return destination
+
+
+def save_figure(
+    figure,
+    path: str | Path,
+    *,
+    dpi: int = 200,
+    close: bool = False,
+) -> Path:
+    """Save one Matplotlib figure with a reproducible bounding box."""
+    destination = Path(path)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    figure.savefig(destination, dpi=dpi, bbox_inches="tight")
+    if close:
+        plt.close(figure)
+    return destination
+
+
+def save_figure_pages(
+    figures,
+    output_dir: str | Path,
+    stem: str,
+    *,
+    dpi: int = 200,
+    close: bool = True,
+) -> list[Path]:
+    """Persist a list of paginated figures using numbered filenames."""
+    directory = Path(output_dir)
+    directory.mkdir(parents=True, exist_ok=True)
+    saved = []
+    for page_number, figure in enumerate(figures, start=1):
+        path = directory / f"{stem}_page_{page_number:02d}.png"
+        saved.append(save_figure(figure, path, dpi=dpi, close=close))
+    return saved
+
+
+def _manifest_rows(paths: Iterable[Path], category: str) -> list[dict]:
+    """Build manifest rows for persisted files."""
+    return [
+        {
+            "category": category,
+            "filename": path.name,
+            "path": str(path),
+            "size_bytes": path.stat().st_size,
+        }
+        for path in paths
+    ]
+
+
+def export_analysis_outputs(
+    results: PipelineResults,
+    output_root: str | Path = "outputs",
+    *,
+    selected_year: int | None = None,
+    selected_years: Iterable[int] | None = None,
+    grid_nrows: int = 2,
+    grid_ncols: int = 3,
+    complete_nrows: int = 6,
+    complete_ncols: int = 4,
+    histogram_bins: int = 60,
+    dpi: int = 200,
+) -> pd.DataFrame:
+    """Persist the complete standard scientific analysis under ``outputs/``.
+
+    The function writes compact analytical tables, all complete-series figure
+    pages, and optional individual/selected-year examples.  The microdata panel
+    is deliberately not duplicated because it is an input data product already
+    stored under ``dados_refined/``.
+
+    Returns
+    -------
+    pandas.DataFrame
+        Manifest containing every file generated by this export call.
+    """
+    paths = prepare_output_paths(output_root)
+    manifest: list[dict] = []
+
+    overview = pipeline_overview(results)
+    diagnostics = build_diagnostics(results)
+    ccdf = results.ccdf_nominal_adjusted
+
+    table_outputs = [
+        save_table(overview, paths.tables / "pipeline_overview.csv"),
+        save_table(results.summary, paths.tables / "annual_summary.csv"),
+        save_table(ccdf, paths.tables / "ccdf_nominal_adjusted.parquet"),
+        save_table(diagnostics, paths.tables / "data_quality_diagnostics.csv"),
+    ]
+    if not results.ccdf_habitual_effective.empty:
+        table_outputs.append(
+            save_table(
+                results.ccdf_habitual_effective,
+                paths.tables / "ccdf_habitual_effective.parquet",
+            )
+        )
+    manifest.extend(_manifest_rows(table_outputs, "table"))
+
+    gini = plot_gini_evolution(results.summary, value_col="income")
+    gini_path = save_figure(gini, paths.figures / "gini_income_all_years.png", dpi=dpi, close=True)
+    manifest.extend(_manifest_rows([gini_path], "figure"))
+
+    complete_years = results.years
+    figure_groups = [
+        (
+            plot_histogram_grid(
+                results.panel,
+                value_col="income",
+                years=complete_years,
+                bins=histogram_bins,
+                yscale="linear",
+                nrows=complete_nrows,
+                ncols=complete_ncols,
+            ),
+            "histogram_income_linear",
+        ),
+        (
+            plot_histogram_grid(
+                results.panel,
+                value_col="income",
+                years=complete_years,
+                bins=histogram_bins,
+                yscale="log",
+                nrows=complete_nrows,
+                ncols=complete_ncols,
+            ),
+            "histogram_income_log_frequency",
+        ),
+        (
+            plot_ccdf_grid(
+                ccdf,
+                measure="income",
+                years=complete_years,
+                transform="linear",
+                nrows=complete_nrows,
+                ncols=complete_ncols,
+            ),
+            "ccdf_income_linear",
+        ),
+        (
+            plot_ccdf_grid(
+                ccdf,
+                measure="income",
+                years=complete_years,
+                transform="loglog",
+                nrows=complete_nrows,
+                ncols=complete_ncols,
+            ),
+            "ccdf_income_loglog",
+        ),
+        (
+            plot_ccdf_grid(
+                ccdf,
+                measure="income",
+                years=complete_years,
+                transform="double_log",
+                nrows=complete_nrows,
+                ncols=complete_ncols,
+            ),
+            "ccdf_income_double_log_legacy",
+        ),
+        (
+            plot_lorenz_grid(
+                results.panel,
+                value_col="income",
+                years=complete_years,
+                nrows=complete_nrows,
+                ncols=complete_ncols,
+            ),
+            "lorenz_income",
+        ),
+        (
+            plot_measure_comparison_grid(
+                ccdf,
+                measures=("income", "income_adj"),
+                years=complete_years,
+                transform="loglog",
+                nrows=complete_nrows,
+                ncols=complete_ncols,
+            ),
+            "ccdf_nominal_vs_adjusted_loglog",
+        ),
+    ]
+
+    for figures, stem in figure_groups:
+        saved = save_figure_pages(figures, paths.figures, stem, dpi=dpi, close=True)
+        manifest.extend(_manifest_rows(saved, "figure"))
+
+    if selected_year is not None:
+        selected_year = int(selected_year)
+        individual_figures = [
+            (
+                plot_histogram(
+                    results.panel,
+                    year=selected_year,
+                    value_col="income",
+                    bins=histogram_bins,
+                    yscale="linear",
+                ),
+                f"histogram_income_{selected_year}_linear.png",
+            ),
+            (
+                plot_histogram(
+                    results.panel,
+                    year=selected_year,
+                    value_col="income",
+                    bins=histogram_bins,
+                    yscale="log",
+                ),
+                f"histogram_income_{selected_year}_log_frequency.png",
+            ),
+            (
+                plot_ccdf(ccdf, year=selected_year, measure="income", transform="linear"),
+                f"ccdf_income_{selected_year}_linear.png",
+            ),
+            (
+                plot_ccdf(ccdf, year=selected_year, measure="income", transform="loglog"),
+                f"ccdf_income_{selected_year}_loglog.png",
+            ),
+            (
+                plot_ccdf(ccdf, year=selected_year, measure="income", transform="double_log"),
+                f"ccdf_income_{selected_year}_double_log_legacy.png",
+            ),
+            (
+                plot_lorenz_curve(results.panel, year=selected_year, value_col="income"),
+                f"lorenz_income_{selected_year}.png",
+            ),
+            (
+                plot_measure_comparison(
+                    ccdf,
+                    year=selected_year,
+                    measures=("income", "income_adj"),
+                    transform="loglog",
+                ),
+                f"ccdf_nominal_vs_adjusted_{selected_year}_loglog.png",
+            ),
+        ]
+        for figure, filename in individual_figures:
+            saved = save_figure(figure, paths.figures / filename, dpi=dpi, close=True)
+            manifest.extend(_manifest_rows([saved], "figure"))
+
+    if selected_years is not None:
+        selected_years = [int(year) for year in selected_years]
+        selected_groups = [
+            (
+                plot_histogram_grid(
+                    results.panel,
+                    value_col="income",
+                    years=selected_years,
+                    bins=histogram_bins,
+                    yscale="log",
+                    nrows=grid_nrows,
+                    ncols=grid_ncols,
+                ),
+                "selected_histogram_income_log_frequency",
+            ),
+            (
+                plot_ccdf_grid(
+                    ccdf,
+                    measure="income",
+                    years=selected_years,
+                    transform="loglog",
+                    nrows=grid_nrows,
+                    ncols=grid_ncols,
+                ),
+                "selected_ccdf_income_loglog",
+            ),
+            (
+                plot_lorenz_grid(
+                    results.panel,
+                    value_col="income",
+                    years=selected_years,
+                    nrows=grid_nrows,
+                    ncols=grid_ncols,
+                ),
+                "selected_lorenz_income",
+            ),
+        ]
+        for figures, stem in selected_groups:
+            saved = save_figure_pages(figures, paths.figures, stem, dpi=dpi, close=True)
+            manifest.extend(_manifest_rows(saved, "figure"))
+
+    manifest_frame = pd.DataFrame(manifest)
+    manifest_path = save_table(manifest_frame, paths.root / "manifest.csv")
+    manifest_frame = pd.concat(
+        [
+            manifest_frame,
+            pd.DataFrame(
+                [
+                    {
+                        "category": "manifest",
+                        "filename": manifest_path.name,
+                        "path": str(manifest_path),
+                        "size_bytes": manifest_path.stat().st_size,
+                    }
+                ]
+            ),
+        ],
+        ignore_index=True,
+    )
+    return manifest_frame
