@@ -16,6 +16,15 @@ from .preprocessing import adjust_income_to_2025
 SUPPORTED_FILE_SUFFIXES = {".parquet", ".csv", ".feather", ".pkl", ".pickle", ".xlsx", ".xls"}
 YEAR_PATTERN = re.compile(r"(19|20)\d{2}")
 
+# The published analytical records retain Portuguese field names.  The package
+# normalizes them only in memory so that the data files themselves remain stable.
+COLUMN_ALIASES = {
+    "ano": "year",
+    "renda": "income",
+    "renda_efetiva": "income_effective",
+    "renda_efet": "income_effective",
+}
+
 
 @dataclass(frozen=True)
 class PipelineConfig:
@@ -59,6 +68,32 @@ def _read_table(path: Path) -> pd.DataFrame:
     raise ValueError(f"Unsupported database format '{suffix}'.")
 
 
+def _normalize_column_names(df: pd.DataFrame) -> pd.DataFrame:
+    """Map stored Portuguese data-record names to the internal analytical schema.
+
+    The refined repository files use ``ano`` and ``renda``.  These are converted
+    in memory to ``year`` and ``income``.  If both an alias and its canonical
+    counterpart are present, their values must agree exactly (allowing missing
+    values in the same positions); otherwise the input is ambiguous and rejected.
+    """
+    out = df.copy()
+    for alias, canonical in COLUMN_ALIASES.items():
+        if alias not in out.columns:
+            continue
+        if canonical in out.columns:
+            left = out[alias]
+            right = out[canonical]
+            equal = left.eq(right) | (left.isna() & right.isna())
+            if not bool(equal.all()):
+                raise ValueError(
+                    f"Conflicting columns '{alias}' and '{canonical}' are both present."
+                )
+            out = out.drop(columns=[alias])
+        else:
+            out = out.rename(columns={alias: canonical})
+    return out
+
+
 def _year_from_filename(path: Path) -> int:
     """Extract the survey year from a filename such as pnad_refined_2025.parquet."""
     match = YEAR_PATTERN.search(path.stem)
@@ -68,11 +103,11 @@ def _year_from_filename(path: Path) -> int:
 
 
 def load_database(path: str | Path) -> pd.DataFrame:
-    """Load either one database file or a directory of annual Parquet files.
+    """Load one database file or a directory of annual refined Parquet records.
 
-    For directory input, files matching `pnad_refined_*.parquet` are concatenated.
-    If an annual file does not contain `year`, the value is inferred from its
-    filename before concatenation.
+    Annual files may retain the published Portuguese names ``ano`` and ``renda``;
+    these are normalized in memory.  For directory input, the year is also checked
+    against the ``pnad_refined_YYYY.parquet`` filename.
     """
     database_path = Path(path).expanduser().resolve()
     if not database_path.exists():
@@ -86,7 +121,7 @@ def load_database(path: str | Path) -> pd.DataFrame:
             )
         frames = []
         for file in files:
-            frame = pd.read_parquet(file).copy()
+            frame = _normalize_column_names(pd.read_parquet(file))
             inferred_year = _year_from_filename(file)
             if "year" not in frame.columns:
                 frame.insert(0, "year", inferred_year)
@@ -100,17 +135,17 @@ def load_database(path: str | Path) -> pd.DataFrame:
             f"Unsupported database format '{database_path.suffix}'. "
             f"Expected one of {sorted(SUPPORTED_FILE_SUFFIXES)}."
         )
-    return _read_table(database_path)
+    return _normalize_column_names(_read_table(database_path))
 
 
 def validate_database(df: pd.DataFrame) -> pd.DataFrame:
     """Validate and normalize the minimal schema required by the analysis."""
+    out = _normalize_column_names(df)
     required = {"year", "income"}
-    missing = required.difference(df.columns)
+    missing = required.difference(out.columns)
     if missing:
         raise ValueError("Database is missing required columns: " + ", ".join(sorted(missing)))
 
-    out = df.copy()
     out["year"] = pd.to_numeric(out["year"], errors="coerce")
     out["income"] = pd.to_numeric(out["income"], errors="coerce")
     if out["year"].isna().any():
