@@ -100,7 +100,13 @@ The notebook reads `../dados_refined` by default. A clean end-to-end execution a
 
 # Repository contents
 
-[`dados_refined/`](dados_refined/) contains the annual analytical records. [`config/pnad_metadata.csv`](config/pnad_metadata.csv) contains the longitudinal variable map and monetary metadata. [`docs/methodology.md`](docs/methodology.md) records the mathematical and processing definitions, while [`docs/database_schema.md`](docs/database_schema.md) specifies the data-record interface. [`src/pnad_income/`](src/pnad_income/) contains the reusable analytical implementation, [`notebooks/pnad_income_pipeline.ipynb`](notebooks/pnad_income_pipeline.ipynb) contains the complete scientific analysis, and [`tests/`](tests/) contains reproducibility checks for the core transformations and estimators.
+[`dados_refined/`](dados_refined/) contains the annual analytical records. 
+[`config/pnad_metadata.csv`](config/pnad_metadata.csv) contains the longitudinal variable map and monetary metadata. 
+[`docs/methodology.md`](docs/methodology.md) records the mathematical and processing definitions 
+[`docs/database_schema.md`](docs/database_schema.md) specifies the data-record interface. 
+[`src/pnad_income/`](src/pnad_income/) contains the reusable analytical implementation
+[`notebooks/pnad_income_pipeline.ipynb`](notebooks/pnad_income_pipeline.ipynb) contains the complete scientific analysis 
+[`tests/`](tests/) contains reproducibility checks for the core transformations and estimators.
 
 # Intended use
 
