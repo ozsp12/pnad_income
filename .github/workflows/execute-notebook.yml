@@ -17,31 +17,27 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -e '.[dev,notebooks]'
+      - name: Inspect refined database schema
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import pandas as pd
+          files=sorted(Path('dados_refined').glob('pnad_refined_*.parquet'))
+          print('NUMBER_OF_FILES', len(files))
+          for file in [files[0], files[len(files)//2], files[-10], files[-1]]:
+              df=pd.read_parquet(file)
+              print(file.name, 'shape=', df.shape, 'columns=', df.columns.tolist())
+              print(df.head(2).to_string())
+          print('UNIQUE_SCHEMAS')
+          schemas={}
+          for file in files:
+              cols=tuple(pd.read_parquet(file).columns.tolist())
+              schemas.setdefault(cols, []).append(file.name)
+          for cols,names in schemas.items():
+              print(cols, names[0], '...', names[-1], 'count=', len(names))
+          PY
       - name: Run tests
         run: pytest -q
       - name: Execute notebook
         working-directory: notebooks
         run: jupyter nbconvert --to notebook --execute pnad_income_pipeline.ipynb --output pnad_income_pipeline_executed.ipynb --ExecutePreprocessor.timeout=1200
-      - name: Extract notebook text output
-        run: |
-          python - <<'PY'
-          import json
-          from pathlib import Path
-          nb=json.loads(Path('notebooks/pnad_income_pipeline_executed.ipynb').read_text(encoding='utf-8'))
-          out=[]
-          for i,cell in enumerate(nb.get('cells',[]),1):
-              if cell.get('cell_type')!='code': continue
-              out.append(f'\n=== CODE CELL {i} ===\n')
-              for item in cell.get('outputs',[]):
-                  if item.get('output_type')=='stream':
-                      text=item.get('text',''); out.append(''.join(text) if isinstance(text,list) else text)
-                  text=item.get('data',{}).get('text/plain')
-                  if text: out.append((''.join(text) if isinstance(text,list) else text)+'\n')
-          Path('notebook_output.txt').write_text(''.join(out),encoding='utf-8')
-          PY
-      - uses: actions/upload-artifact@v4
-        with:
-          name: pnad-notebook-execution
-          path: |
-            notebooks/pnad_income_pipeline_executed.ipynb
-            notebook_output.txt
