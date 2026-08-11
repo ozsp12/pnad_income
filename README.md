@@ -1,46 +1,53 @@
-# PNAD Income Distribution Project
+# PNAD Income Analysis
 
-A reproducible research project for the longitudinal analysis of Brazilian income distributions using PNAD and PNAD Continua microdata from 1976 to 2025. The repository consolidates an undergraduate research codebase originally developed by Beatriz and its subsequent refactoring into a metadata-driven analytical pipeline.
+Reproducible research software for longitudinal analysis of Brazilian income distributions using PNAD and PNAD Contínua data from 1976 to 2025.
 
-The primary objective is to study the evolution of income distributions and inequality through annual income statistics, complementary cumulative distribution functions (CCDFs), geometric income bins, Gini coefficients, Lorenz curves, and monetary adjustment to a common 2025 reference. For 2016–2025 the pipeline preserves both `VD4019` and `VD4020`, allowing the habitual/effective income comparison that existed in the original work.
+The repository is organized as a Python project rather than as a collection of exploratory notebooks. All analytical logic is implemented in documented modules under `src/pnad_income/`. A single notebook, `notebooks/pnad_income_pipeline.ipynb`, executes the complete pipeline and explains each analytical step and its outputs.
+
+## Scientific scope
+
+The project provides:
+
+- annual descriptive statistics for income distributions;
+- monetary standardization to a common 2025 reference;
+- Gini coefficients and Lorenz curves;
+- complementary cumulative distribution functions (CCDFs);
+- linear, log-log, and `ln[ln(CCDF)]` representations;
+- nominal versus adjusted income comparisons;
+- habitual versus effective income comparisons when both measures are available.
 
 ## Repository structure
 
 ```text
 pnad_income/
-├── config/                     # Survey-variable and monetary metadata
-├── data/                       # Local raw/processed data (not versioned)
-├── docs/                       # Methodology and migration notes
-├── notebooks/                  # Thin, reproducible analytical notebooks
-├── outputs/                    # Reproducible figures/tables/reports
-├── src/pnad_income/            # Reusable Python package
-├── tests/                      # Regression/unit tests
-└── archive/                    # Historical working material / provenance
+├── config/
+│   └── pnad_metadata.csv
+├── dados_refined/
+│   └── pnad_refined_YYYY.parquet
+├── docs/
+│   ├── database_schema.md
+│   └── methodology.md
+├── notebooks/
+│   └── pnad_income_pipeline.ipynb
+├── outputs/
+│   └── README.md
+├── src/
+│   └── pnad_income/
+│       ├── __init__.py
+│       ├── config.py
+│       ├── distributions.py
+│       ├── inequality.py
+│       ├── io.py
+│       ├── pipeline.py
+│       ├── plotting.py
+│       └── preprocessing.py
+├── tests/
+├── pyproject.toml
+├── requirements.txt
+└── README.md
 ```
 
-## Analytical workflow
-
-1. `notebooks/00_metadata.ipynb` inspects the single project metadata table.
-2. `notebooks/01_build_refined_data.ipynb` reads fixed-width microdata and produces standardized annual Parquet files.
-3. `notebooks/02_descriptive_inequality.ipynb` computes descriptive statistics, Gini coefficients, histograms, and Lorenz curves.
-4. `notebooks/03_income_distributions.ipynb` computes ordinary, log-log, and double-log CCDF representations and compares nominal with adjusted distributions.
-5. `notebooks/04_habitual_vs_effective.ipynb` compares `VD4019` and `VD4020` for 2016–2025.
-
-Core calculations live under `src/pnad_income/`; notebooks are intentionally thin and should not contain independent copies of constants or analytical functions.
-
-## CCDF definition
-
-For income `X`, the project evaluates the complementary cumulative distribution
-
-```text
-CCDF(x) = P(X >= x).
-```
-
-Geometric thresholds start at the smallest strictly positive income. Zero-income observations nevertheless remain in the normalization population, avoiding the unintended conditional distribution `P(X >= x | X > 0)` that appeared in an intermediate refactor.
-
-## Data and provenance
-
-Raw PNAD microdata are not committed to this repository. `config/pnad_metadata.csv` records the expected fixed-width positions, historical missing-value codes, local file patterns, currency/adjustment metadata, and the corresponding IBGE source location for each year. Years without PNAD observations in the inherited time series remain explicitly represented in the metadata.
+`dados_refined/` is the analytical database. It contains one Parquet file per available survey year. The pipeline reads the directory directly and infers the year from `pnad_refined_YYYY.parquet` if a file does not already contain a `year` column.
 
 ## Installation
 
@@ -48,33 +55,78 @@ Raw PNAD microdata are not committed to this repository. `config/pnad_metadata.c
 git clone https://github.com/ozsp12/pnad_income.git
 cd pnad_income
 python -m venv .venv
-# Windows: .venv\Scripts\activate
-# Linux/macOS: source .venv/bin/activate
+```
+
+Activate the environment and install the project:
+
+```bash
+# Windows
+.venv\Scripts\activate
+
+# Linux/macOS
+source .venv/bin/activate
+
 pip install -e ".[dev,notebooks]"
 pytest
 ```
 
-Place the original fixed-width microdata under `data/raw/` with the file structure described in `config/pnad_metadata.csv`, then execute the notebooks in numerical order.
+## Execute the analysis
 
-## Main changes relative to the inherited notebooks
+Open and execute:
 
-- one metadata source instead of duplicated year-by-year constants;
-- reusable functions instead of `globals()` and manually repeated blocks;
-- restored `VD4020` and habitual/effective income analysis;
-- restored linear and log-log CCDF analyses;
-- restored nominal-versus-adjusted CCDF comparisons;
-- corrected CCDF normalization with zero incomes retained in the denominator;
-- reproducible tests for distribution and inequality functions.
+```text
+notebooks/pnad_income_pipeline.ipynb
+```
 
-See [`docs/migration_notes.md`](docs/migration_notes.md) for the reconciliation of the two codebases and [`docs/methodology.md`](docs/methodology.md) for mathematical and processing definitions.
+By default the notebook reads `../dados_refined`. A different database path can be supplied with the environment variable `PNAD_DATABASE_PATH`.
 
-## Research provenance
+The notebook performs the following sequence through the encapsulated package:
 
-**Supervisor / principal researcher:** Dr. Osvaldo L. Santos-Pereira  
-**Undergraduate research student:** Beatriz (Bia)
+1. locate and load the annual Parquet database;
+2. validate the analytical schema and temporal coverage;
+3. attach year-level monetary metadata;
+4. construct adjusted income measures;
+5. compute annual descriptive and inequality statistics;
+6. compute nominal and adjusted CCDFs;
+7. compare habitual and effective income when `income_effective` is present;
+8. generate figures and final reproducibility diagnostics.
 
-Dr. Osvaldo L. Santos-Pereira — [Academic webpage](https://ozsp12.github.io/) · [Lattes](http://lattes.cnpq.br/6730251976463283) · [ORCID](https://orcid.org/0000-0003-2231-517X) · [Google Scholar](https://scholar.google.com/citations?user=HIZp0X8AAAAJ&hl=en) · [ResearchGate](https://www.researchgate.net/profile/Osvaldo-Santos-Pereira) · [GitHub](https://github.com/ozsp12) · [LinkedIn](https://www.linkedin.com/in/ozsp12) · [Substack](https://substack.com/@olsp1982)
+The notebook contains no independent implementation of these calculations. A clean kernel restart therefore executes the same code paths that are covered by the test suite.
+
+## CCDF convention
+
+For a nonnegative income variable \(X\), the empirical complementary cumulative distribution is
+
+\[
+\widehat{\overline F}(x)=\frac{1}{N}\sum_{i=1}^{N}\mathbf{1}(X_i\geq x).
+\]
+
+Geometric thresholds begin at the smallest strictly positive observation, while finite zero-income observations remain in the denominator \(N\). The estimator is therefore the unconditional CCDF rather than \(P(X\geq x\mid X>0)\).
+
+## Monetary adjustment
+
+The project uses
+
+\[
+Y_{2025}=\frac{Y}{E}I,
+\]
+
+where \(Y\) is observed income, \(E\) is the year-specific exchange factor, and \(I\) is the factor that brings the value to the 2025 reference. Year-level constants are centralized in `config/pnad_metadata.csv`.
+
+See [`docs/methodology.md`](docs/methodology.md) for the mathematical definitions and [`docs/database_schema.md`](docs/database_schema.md) for the database interface.
+
+## Tests
+
+```bash
+pytest
+```
+
+The tests evaluate preprocessing, CCDF construction, inequality measures, database loading, schema validation, and high-level pipeline orchestration independently of Jupyter.
+
+## Author
+
+**Dr. Osvaldo L. Santos-Pereira** — [Academic webpage](https://ozsp12.github.io/) · [Lattes](http://lattes.cnpq.br/6730251976463283) · [ORCID](https://orcid.org/0000-0003-2231-517X) · [Google Scholar](https://scholar.google.com/citations?user=HIZp0X8AAAAJ&hl=en) · [ResearchGate](https://www.researchgate.net/profile/Osvaldo-Santos-Pereira) · [GitHub](https://github.com/ozsp12) · [LinkedIn](https://www.linkedin.com/in/ozsp12)
 
 ## License
 
-No software license has been assigned yet. Add an explicit license before treating the repository as reusable third-party software.
+No software license has been assigned yet.

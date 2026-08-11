@@ -9,17 +9,14 @@ venv/
 # Jupyter
 .ipynb_checkpoints/
 
-# Local data and generated results
-data/raw/*
-data/interim/*
-data/processed/*
+# Generated outputs
 outputs/figures/*
 outputs/tables/*
 outputs/reports/*
-
-# Keep directory documentation
-!data/README.md
 !outputs/README.md
+
+# Local configuration
+.env
 
 # OS / IDE
 .DS_Store
