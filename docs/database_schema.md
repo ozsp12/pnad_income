@@ -1,6 +1,6 @@
-# Analytical Database Schema
+# Analytical Data Records
 
-The repository stores the analytical database as annual Parquet files under `dados_refined/`.
+The harmonized analytical database is stored as annual Parquet records under `dados_refined/`. There are 45 files covering the available survey years from 1976 through 2025.
 
 ## File convention
 
@@ -12,33 +12,29 @@ dados_refined/
 └── pnad_refined_2025.parquet
 ```
 
-Only survey years with available observations need to be present. When a Parquet file does not contain a `year` column, the loader extracts the four-digit year from its filename and inserts it explicitly before concatenating the panel.
+No file is present for 1980, 1991, 1994, 2000, or 2010.
 
-## Required analytical column
+## Stored schema
 
-| Column | Type | Definition |
+Every current Parquet file contains exactly two fields:
+
+| Field | Type | Scientific meaning |
 |---|---|---|
-| `income` | numeric | Longitudinal income measure used in the annual distribution analysis. |
+| `ano` | integer | Survey year represented by the record. |
+| `renda` | numeric | Refined household per-capita income measure used for the longitudinal distribution analysis. |
 
-A `year` column is recommended. For files following the naming convention above, it can be inferred from the filename.
+The value of `ano` is checked against the four-digit year encoded in the filename. A disagreement is treated as a data-integrity error.
 
-## Optional analytical columns
+The stored Portuguese names are part of the data record. The analytical implementation maps `ano` to `year` and `renda` to `income` only in memory. This normalization is deliberately separated from the Parquet files so that analysis does not silently modify the published records.
 
-| Column | Type | Definition |
-|---|---|---|
-| `income_effective` | numeric | Effective-income measure when supplied by the survey processing stage. |
-| `income_adj` | numeric | Adjusted income; recomputed by the pipeline when monetary factors are available. |
-| `income_effective_adj` | numeric | Adjusted effective income. |
-| `exchange` | numeric | Year-specific exchange factor. |
-| `price_index` | numeric | Year-specific price index retained for validation. |
-| `inflation_to_2025` | numeric | Multiplicative factor to the 2025 reference. |
+## Monetary variables
 
-Missing monetary columns are attached from `config/pnad_metadata.csv` by year.
+Exchange factors, historical currency labels, price-index values, and inflation-to-2025 factors are not duplicated in every observation-level Parquet file. They are year-level metadata stored in `config/pnad_metadata.csv` and joined to the panel during analysis. The adjusted variable generated in memory is therefore a derived analytical quantity rather than an additional field in the released annual record.
+
+## Additional income measures
+
+The current 45-file release contains only the longitudinal `renda` measure. The 2016–2025 records do not presently include a separate effective-income series such as `VD4020`. Code support for an additional measure does not imply that such a field is part of this data release.
 
 ## Missing values and zero income
 
-Survey sentinel codes must be converted to standard missing values during preprocessing. Zero income is valid data and must not be converted to missing. Zero observations remain in the population used to normalize the CCDF.
-
-## Alternative database location
-
-`PipelineConfig.database_path` may point either to the `dados_refined/` directory or to a single Parquet, CSV, Feather, Pickle, or Excel file. The environment variable `PNAD_DATABASE_PATH` can override the default notebook path.
+Survey-specific sentinel values are handled during construction of the refined records. Valid zero-income observations are retained. In the empirical CCDF they remain in the normalization population even though geometric evaluation thresholds begin on the strictly positive support.
