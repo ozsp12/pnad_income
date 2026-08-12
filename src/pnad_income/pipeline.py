@@ -11,13 +11,11 @@ import pandas as pd
 from .config import DEFAULT_METADATA_PATH, load_metadata
 from .distributions import compare_income_measures_ccdf
 from .inequality import summary_statistics
-from .preprocessing import adjust_income_to_2025
+from .preprocessing import adjust_income_to_2025, apply_manual_outlier_cuts
 
 SUPPORTED_FILE_SUFFIXES = {".parquet", ".csv", ".feather", ".pkl", ".pickle", ".xlsx", ".xls"}
 YEAR_PATTERN = re.compile(r"(19|20)\d{2}")
 
-# The published analytical records retain Portuguese field names.  The package
-# normalizes them only in memory so that the data files themselves remain stable.
 COLUMN_ALIASES = {
     "ano": "year",
     "renda": "income",
@@ -35,6 +33,7 @@ class PipelineConfig:
     ccdf_base: float = 1.05
     start_year: int | None = None
     end_year: int | None = None
+    apply_manual_outlier_cuts: bool = False
 
 
 @dataclass
@@ -45,6 +44,7 @@ class PipelineResults:
     summary: pd.DataFrame
     ccdf_nominal_adjusted: pd.DataFrame
     ccdf_habitual_effective: pd.DataFrame
+    manual_outlier_cuts_applied: bool = False
 
     @property
     def years(self) -> list[int]:
@@ -69,13 +69,7 @@ def _read_table(path: Path) -> pd.DataFrame:
 
 
 def _normalize_column_names(df: pd.DataFrame) -> pd.DataFrame:
-    """Map stored Portuguese data-record names to the internal analytical schema.
-
-    The refined repository files use ``ano`` and ``renda``.  These are converted
-    in memory to ``year`` and ``income``.  If both an alias and its canonical
-    counterpart are present, their values must agree exactly (allowing missing
-    values in the same positions); otherwise the input is ambiguous and rejected.
-    """
+    """Map stored Portuguese data-record names to the internal analytical schema."""
     out = df.copy()
     for alias, canonical in COLUMN_ALIASES.items():
         if alias not in out.columns:
@@ -103,12 +97,7 @@ def _year_from_filename(path: Path) -> int:
 
 
 def load_database(path: str | Path) -> pd.DataFrame:
-    """Load one database file or a directory of annual refined Parquet records.
-
-    Annual files may retain the published Portuguese names ``ano`` and ``renda``;
-    these are normalized in memory.  For directory input, the year is also checked
-    against the ``pnad_refined_YYYY.parquet`` filename.
-    """
+    """Load one database file or a directory of annual refined Parquet records."""
     database_path = Path(path).expanduser().resolve()
     if not database_path.exists():
         raise FileNotFoundError(f"Database not found: {database_path}")
@@ -178,7 +167,12 @@ def attach_monetary_metadata(
 
 
 def prepare_panel(config: PipelineConfig) -> pd.DataFrame:
-    """Load, validate, filter, and monetarily standardize the analytical panel."""
+    """Load, validate, filter, optionally trim, and standardize the panel.
+
+    The optional legacy outlier treatment is deliberately performed on nominal
+    ``income`` before monetary adjustment so that all downstream statistics,
+    CCDFs, Lorenz curves, and figures consume exactly the same treated sample.
+    """
     panel = validate_database(load_database(config.database_path))
     panel = attach_monetary_metadata(panel, config.metadata_path)
 
@@ -189,7 +183,15 @@ def prepare_panel(config: PipelineConfig) -> pd.DataFrame:
     if panel.empty:
         raise ValueError("No observations remain after applying the year filter.")
 
-    # Recompute adjusted variables so stale precomputed values cannot survive silently.
+    panel = apply_manual_outlier_cuts(
+        panel,
+        enabled=config.apply_manual_outlier_cuts,
+        year_col="year",
+        value_col="income",
+    )
+    if panel.empty:
+        raise ValueError("No observations remain after optional outlier filtering.")
+
     return adjust_income_to_2025(panel).reset_index(drop=True)
 
 
@@ -219,6 +221,7 @@ def run_pipeline(config: PipelineConfig) -> PipelineResults:
         summary=summary,
         ccdf_nominal_adjusted=ccdf_nominal_adjusted,
         ccdf_habitual_effective=ccdf_habitual_effective,
+        manual_outlier_cuts_applied=config.apply_manual_outlier_cuts,
     )
 
 
@@ -233,11 +236,12 @@ def pipeline_overview(results: PipelineResults) -> pd.DataFrame:
     return pd.DataFrame({
         "metric": [
             "observations", "first_year", "last_year", "number_of_years",
-            "years_with_effective_income", "ccdf_rows_nominal_adjusted",
-            "ccdf_rows_habitual_effective",
+            "years_with_effective_income", "manual_outlier_cuts_applied",
+            "ccdf_rows_nominal_adjusted", "ccdf_rows_habitual_effective",
         ],
         "value": [
             len(panel), min(years), max(years), len(years), int(effective_years),
+            bool(results.manual_outlier_cuts_applied),
             len(results.ccdf_nominal_adjusted), len(results.ccdf_habitual_effective),
         ],
     })
