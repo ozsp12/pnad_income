@@ -2,8 +2,21 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+
 import numpy as np
 import pandas as pd
+
+
+# Legacy upper-income thresholds recovered from the historical ``pnad.py``
+# workflow.  They are intentionally disabled by default and are retained only
+# for explicit sensitivity analyses.
+LEGACY_MANUAL_OUTLIER_CUTS: dict[int, float] = {
+    1976: 4_975_956.36618934,
+    1977: 396_446.78499665,
+    1978: 257_615.93691339,
+    1979: 151_364.81112462,
+}
 
 
 def _clean_numeric(series: pd.Series) -> pd.Series:
@@ -46,6 +59,60 @@ def standardize_income_frame(raw: pd.DataFrame, spec: pd.Series) -> pd.DataFrame
     out = df[keep].copy()
     out.insert(0, "year", int(spec["year"]))
     return out.reset_index(drop=True)
+
+
+def apply_manual_outlier_cuts(
+    df: pd.DataFrame,
+    enabled: bool = False,
+    cuts: Mapping[int, float] | None = None,
+    *,
+    year_col: str = "year",
+    value_col: str = "income",
+) -> pd.DataFrame:
+    """Optionally apply the legacy 1976--1979 upper-income cuts.
+
+    Parameters
+    ----------
+    df:
+        Analytical panel containing survey year and the pre-adjustment income
+        measure.
+    enabled:
+        If ``False`` (default), return an unchanged copy.  This keeps the
+        canonical analysis untrimmed.  If ``True``, observations above each
+        configured year-specific threshold are removed.
+    cuts:
+        Optional replacement mapping ``{year: upper_income_threshold}``.  When
+        omitted, :data:`LEGACY_MANUAL_OUTLIER_CUTS` is used.
+    year_col, value_col:
+        Column names used to identify the survey year and income measure.
+
+    Notes
+    -----
+    The thresholds originate in the legacy ``pnad.py`` workflow.  They are not
+    inferred statistically by this function and should therefore be interpreted
+    as a reproducibility/sensitivity option rather than a default cleaning rule.
+    """
+    out = df.copy()
+    if not enabled:
+        return out
+    missing = {year_col, value_col}.difference(out.columns)
+    if missing:
+        raise KeyError("Manual outlier filtering requires: " + ", ".join(sorted(missing)))
+
+    active = LEGACY_MANUAL_OUTLIER_CUTS if cuts is None else dict(cuts)
+    normalized: dict[int, float] = {}
+    for year, threshold in active.items():
+        threshold = float(threshold)
+        if not np.isfinite(threshold) or threshold <= 0:
+            raise ValueError("Outlier thresholds must be finite positive values.")
+        normalized[int(year)] = threshold
+
+    years = pd.to_numeric(out[year_col], errors="coerce")
+    values = pd.to_numeric(out[value_col], errors="coerce")
+    keep = np.ones(len(out), dtype=bool)
+    for year, threshold in normalized.items():
+        keep &= ~((years == year) & (values > threshold)).to_numpy()
+    return out.loc[keep].reset_index(drop=True)
 
 
 def adjust_income_to_2025(
