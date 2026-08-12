@@ -1,9 +1,11 @@
 category,filename,path,size_bytes
-table,pipeline_overview.csv,/home/runner/work/pnad_income/pnad_income/outputs/tables/pipeline_overview.csv,178
-table,annual_summary.csv,/home/runner/work/pnad_income/pnad_income/outputs/tables/annual_summary.csv,9978
+table,pipeline_overview.csv,/home/runner/work/pnad_income/pnad_income/outputs/tables/pipeline_overview.csv,212
+table,annual_summary.csv,/home/runner/work/pnad_income/pnad_income/outputs/tables/annual_summary.csv,25622
 table,ccdf_nominal_adjusted.parquet,/home/runner/work/pnad_income/pnad_income/outputs/tables/ccdf_nominal_adjusted.parquet,1409638
 table,data_quality_diagnostics.csv,/home/runner/work/pnad_income/pnad_income/outputs/tables/data_quality_diagnostics.csv,129
 figure,gini_income_all_years.png,/home/runner/work/pnad_income/pnad_income/outputs/figures/gini_income_all_years.png,88101
+figure,top_income_shares_all_years.png,/home/runner/work/pnad_income/pnad_income/outputs/figures/top_income_shares_all_years.png,128024
+figure,extended_inequality_pietra_k_z_all_years.png,/home/runner/work/pnad_income/pnad_income/outputs/figures/extended_inequality_pietra_k_z_all_years.png,98179
 figure,histogram_income_linear_page_01.png,/home/runner/work/pnad_income/pnad_income/outputs/figures/histogram_income_linear_page_01.png,565577
 figure,histogram_income_linear_page_02.png,/home/runner/work/pnad_income/pnad_income/outputs/figures/histogram_income_linear_page_02.png,422477
 figure,histogram_income_log_frequency_page_01.png,/home/runner/work/pnad_income/pnad_income/outputs/figures/histogram_income_log_frequency_page_01.png,681524
@@ -16,6 +18,8 @@ figure,ccdf_income_double_log_legacy_page_01.png,/home/runner/work/pnad_income/p
 figure,ccdf_income_double_log_legacy_page_02.png,/home/runner/work/pnad_income/pnad_income/outputs/figures/ccdf_income_double_log_legacy_page_02.png,736845
 figure,lorenz_income_page_01.png,/home/runner/work/pnad_income/pnad_income/outputs/figures/lorenz_income_page_01.png,771245
 figure,lorenz_income_page_02.png,/home/runner/work/pnad_income/pnad_income/outputs/figures/lorenz_income_page_02.png,717273
+figure,lorenz_income_annotated_g_p_k_z_page_01.png,/home/runner/work/pnad_income/pnad_income/outputs/figures/lorenz_income_annotated_g_p_k_z_page_01.png,911318
+figure,lorenz_income_annotated_g_p_k_z_page_02.png,/home/runner/work/pnad_income/pnad_income/outputs/figures/lorenz_income_annotated_g_p_k_z_page_02.png,848715
 figure,ccdf_nominal_vs_adjusted_loglog_page_01.png,/home/runner/work/pnad_income/pnad_income/outputs/figures/ccdf_nominal_vs_adjusted_loglog_page_01.png,1104292
 figure,ccdf_nominal_vs_adjusted_loglog_page_02.png,/home/runner/work/pnad_income/pnad_income/outputs/figures/ccdf_nominal_vs_adjusted_loglog_page_02.png,1013554
 figure,histogram_income_2025_linear.png,/home/runner/work/pnad_income/pnad_income/outputs/figures/histogram_income_2025_linear.png,42889
@@ -24,7 +28,9 @@ figure,ccdf_income_2025_linear.png,/home/runner/work/pnad_income/pnad_income/out
 figure,ccdf_income_2025_loglog.png,/home/runner/work/pnad_income/pnad_income/outputs/figures/ccdf_income_2025_loglog.png,53142
 figure,ccdf_income_2025_double_log_legacy.png,/home/runner/work/pnad_income/pnad_income/outputs/figures/ccdf_income_2025_double_log_legacy.png,49778
 figure,lorenz_income_2025.png,/home/runner/work/pnad_income/pnad_income/outputs/figures/lorenz_income_2025.png,79337
+figure,lorenz_income_2025_annotated_g_p_k_z.png,/home/runner/work/pnad_income/pnad_income/outputs/figures/lorenz_income_2025_annotated_g_p_k_z.png,78202
 figure,ccdf_nominal_vs_adjusted_2025_loglog.png,/home/runner/work/pnad_income/pnad_income/outputs/figures/ccdf_nominal_vs_adjusted_2025_loglog.png,67274
 figure,selected_histogram_income_log_frequency_page_01.png,/home/runner/work/pnad_income/pnad_income/outputs/figures/selected_histogram_income_log_frequency_page_01.png,141542
 figure,selected_ccdf_income_loglog_page_01.png,/home/runner/work/pnad_income/pnad_income/outputs/figures/selected_ccdf_income_loglog_page_01.png,228117
 figure,selected_lorenz_income_page_01.png,/home/runner/work/pnad_income/pnad_income/outputs/figures/selected_lorenz_income_page_01.png,175852
+figure,selected_lorenz_income_annotated_g_p_k_z_page_01.png,/home/runner/work/pnad_income/pnad_income/outputs/figures/selected_lorenz_income_annotated_g_p_k_z_page_01.png,207839
