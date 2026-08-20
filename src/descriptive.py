@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-from data import DEFAULT_METADATA_PATH, load_metadata
+from data import DEFAULT_METADATA_PATH
 
 
 class DescriptiveStatistics:
@@ -40,9 +40,22 @@ class DescriptiveStatistics:
         return values[np.isfinite(values)]
 
     def _metadata(self) -> pd.DataFrame:
+        """Read only the metadata fields required by EDA sentinel diagnostics."""
         if not self.metadata_path.exists():
             return pd.DataFrame(columns=["year", "missing_income_code"])
-        return load_metadata(self.metadata_path)[["year", "missing_income_code"]]
+        frame = pd.read_csv(
+            self.metadata_path,
+            usecols=lambda column: column in {"year", "missing_income_code"},
+        )
+        if "year" not in frame.columns:
+            return pd.DataFrame(columns=["year", "missing_income_code"])
+        if "missing_income_code" not in frame.columns:
+            frame["missing_income_code"] = np.nan
+        frame["year"] = pd.to_numeric(frame["year"], errors="coerce")
+        frame["missing_income_code"] = pd.to_numeric(frame["missing_income_code"], errors="coerce")
+        frame = frame.dropna(subset=["year"]).copy()
+        frame["year"] = frame["year"].astype(int)
+        return frame[["year", "missing_income_code"]].drop_duplicates("year").reset_index(drop=True)
 
     def annual_summary(self) -> pd.DataFrame:
         """Return robust annual descriptive statistics and upper-tail reference levels."""
@@ -212,7 +225,7 @@ class DescriptiveStatistics:
             for ax, year in zip(flat, page):
                 values = self._series(self.frame.loc[self.frame[self.year_col] == year])
                 values = values[values > 0]
-                ax.boxplot(values.to_numpy(), vert=True, showfliers=True)
+                ax.boxplot(values.to_numpy(), orientation="vertical", showfliers=True)
                 ax.set_yscale("log")
                 ax.set(title=f"PNAD {year}", ylabel="Income (log scale)")
                 ax.set_xticks([])
