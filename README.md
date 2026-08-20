@@ -2,7 +2,7 @@
 
 This repository contains a harmonized longitudinal dataset and a reproducible computational pipeline for the study of Brazilian income distributions from 1976 to 2025. The project combines annual PNAD and PNAD Contínua microdata with year-specific extraction metadata, deterministic data-quality treatment, monetary harmonization, empirical distribution analysis, and inequality measures. The analytical series contains 45 survey years; 1980, 1991, 1994, 2000, and 2010 are absent because no compatible PNAD observation is available for those years.
 
-## Repository structure
+# Repository structure
 
 ```text
 pnad_income/
@@ -43,7 +43,7 @@ pnad_income/
 | [`outputs/`](outputs/) | Generated figures, tables, and manifest using flat `eda_` and `paper_` prefixes. |
 | [`.github/workflows/`](.github/workflows/) | Automated validation, trusted-data rebuilding, output audit, and persistence. |
 
-## Data and sources
+# Data and sources
 
 | Source | Coverage / series | Role in the project | Reference |
 |---|---|---|---|
@@ -55,21 +55,21 @@ pnad_income/
 
 The four data layers have distinct roles. [`data/raw/`](data/raw/) is reserved for original source files and is not intended for repository storage. [`data/refined/`](data/refined/) contains structurally harmonized annual Parquet files. [`data/trusted/`](data/trusted/) is rebuilt deterministically from the refined layer after data-quality treatment and is the only layer used by scientific analyses. [`data/metadata/`](data/metadata/) contains the annual extraction and provenance information required to reproduce preparation and cleaning.
 
-## Methodology
+# Methodology
 
 The root README intentionally keeps the methodological description concise. The deterministic refined-to-trusted cleaning rule, sentinel precedence and flag exclusivity, statistical outlier methods, monetary harmonization, CCDF construction, Lorenz analysis, and inequality measures are documented in [`src/README.md`](src/README.md), alongside the responsibilities of each source module.
 
-## Outputs and auditability
+# Outputs and auditability
 
 Generated products use a shallow structure. [`outputs/figures/`](outputs/figures/) and [`outputs/tables/`](outputs/tables/) contain all artifacts, while filename prefixes carry the analytical role. Files beginning with `eda_` document refined-versus-trusted diagnostics, cleaning thresholds, histograms, boxplots, upper-tail behavior, frequencies, and audit counts. Files beginning with `paper_` are produced only from trusted data and contain the distributional and inequality results intended for scientific interpretation.
 
 Examples include `eda_refined_histogram_income_page_01.png`, `eda_trusted_boxplot_income_page_01.png`, `eda_compare_outlier_income_upper_tail_refined_trusted.png`, `paper_ccdf_income_gompertz_page_01.png`, and `paper_annual_inequality_indices.csv`. [`outputs/manifest.csv`](outputs/manifest.csv) records the generated artifacts.
 
-## Reproducibility
+# Reproducibility
 
 Install the project in editable mode with `pip install -e '.[dev]'`. Running `pnad-income --refined data/refined --trusted data/trusted --metadata data/metadata/pnad_metadata.csv --output outputs` rebuilds the trusted layer, executes the 1976–2025 analysis, and writes all audit and scientific artifacts. Pull requests run tests and a complete temporary pipeline. After changes reach `main`, GitHub Actions rebuilds `data/trusted/` and `outputs/`, audits the expected files, uploads the outputs as an artifact, and commits regenerated trusted datasets and analysis products when they change.
 
-## Author
+# Author
 
 **Osvaldo L. Santos-Pereira**  
 [Academic webpage](https://ozsp12.github.io/) · [ORCID](https://orcid.org/0000-0003-2231-517X) · [GitHub](https://github.com/ozsp12)
