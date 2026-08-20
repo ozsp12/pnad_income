@@ -54,8 +54,7 @@ jobs:
           PY
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add -- README.md pyproject.toml src tests .github/workflows/run-pipeline-and-persist-outputs.yml
-          git add -u -- src/pnad_income scripts/refactor_loop_engineering.py .github/workflows/refactor-loop-engineering.yml
+          git add -- README.md pyproject.toml src tests .github/workflows scripts
           if ! git diff --cached --quiet; then
             git commit -m 'refactor EDA, CCDF diagnostics, and repository layout [skip ci]'
             git push origin HEAD:${{ github.head_ref }}
