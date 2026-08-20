@@ -6,8 +6,8 @@ The `src` directory contains the computational implementation for data access, t
 |---|---|
 | [`data.py`](data.py) | Data-layer paths, metadata loading, annual refined/trusted file access, schema validation, raw-to-refined preparation, and monetary harmonization. |
 | [`descriptive.py`](descriptive.py) | `DescriptiveStatistics` provides annual EDA, exact-value frequencies, metadata-sentinel counts, histograms, boxplots, and upper-tail diagnostics. `IncomeDataCleaner` applies the deterministic refined-to-trusted cleaning rule, creates mutually exclusive quality flags, records annual thresholds, and materializes trusted Parquet files. |
-| [`analysis.py`](analysis.py) | Empirical CCDF construction, Lorenz curves, inequality indices, and external Gini validation. |
-| [`plotting.py`](plotting.py) | Scientific plots for CCDF, Lorenz, concentration, and inequality analyses. |
+| [`analysis.py`](analysis.py) | Empirical CCDF construction, Lorenz curves, inequality indices, absolute p80/p99/p100 income totals, and external Gini validation. |
+| [`plotting.py`](plotting.py) | Scientific plots for CCDF, annotated Lorenz grids, absolute income-group totals, concentration, and inequality analyses. |
 | [`pipeline.py`](pipeline.py) | `PipelineConfig` and `PipelineResults`, plus orchestration of scientific analyses using the trusted data layer. |
 | [`outputs.py`](outputs.py) | Flat `figures/` and `tables/` persistence using `eda_` and `paper_` filename prefixes, including refined-versus-trusted diagnostics and the manifest. |
 | [`cli.py`](cli.py) | Command-line entry point exposed as `pnad-income`; it rebuilds trusted data before invoking the scientific pipeline. |
@@ -59,6 +59,12 @@ $$
 $$
 
 which preserves the decreasing visual orientation while retaining the full tail below one percent. The pipeline also computes Lorenz curves and inequality measures including Gini, Pietra, Kolkata, Zanardi, Theil, Atkinson, top-income shares, Shannon-based measures, and Herfindahl concentration.
+
+Annual aggregate income is also decomposed without percentage normalization. `p80` is the income received by the bottom 80% of records, `p99` is the income received by the next 19% (from the 80th through the 99th percentile), and `p100` is the income received by the top 1%. The boundaries are evaluated from the empirical Lorenz curve, and the three absolute components are constrained to sum exactly to the observed annual income total. The table and stacked bars use the harmonized `income_adj` measure in 2025 USD, preserving changes in both scale and composition while avoiding nominal-currency discontinuities across years.
+
+The annotated Lorenz grid reports Gini, Pietra, Kolkata, and Zanardi values in each annual panel. Complete grids use three columns by default; the CLI option `--plot-columns` and the plotting function's `ncols` argument can change that layout. The output pipeline generates only the annotated Lorenz version.
+
+The calculated PNAD Gini series is plotted together with the IPEA and World Bank reference series stored in [`../data/metadata/series_ipea_banco_mundial.csv`](../data/metadata/series_ipea_banco_mundial.csv). Every series is reindexed to the complete annual calendar before plotting, so absent observations remain `NaN` and create true gaps rather than interpolated connecting segments.
 
 Current estimators are record-weighted. Population inference requires the appropriate PNAD survey weights and design information; the present implementation should therefore be interpreted as analysis of the harmonized records rather than a survey-design-corrected population estimator.
 

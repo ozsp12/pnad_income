@@ -58,6 +58,7 @@ The longitudinal series combines IBGE household microdata with exchange-rate and
 | Banco Central do Brasil | Open exchange-rate data used to reproduce recent conversion factors. | [Open exchange-rate dataset](https://dadosabertos.bcb.gov.br/dataset/taxas-de-cambio-todos-os-boletins-diarios) |
 | BLS / FRED | CPIAUCSL used for the project-level adjustment to September 2025 dollars. | [CPIAUCSL](https://fred.stlouisfed.org/series/CPIAUCSL) |
 | Project metadata | Annual extraction fields, fixed-width positions when applicable, missing-value codes, currencies, exchange factors, inflation factors, and source URLs. | [`pnad_metadata.csv`](data/metadata/pnad_metadata.csv) |
+| IPEA and World Bank | External annual Gini series used only for comparison with the coefficient calculated from the trusted PNAD records. | [`series_ipea_banco_mundial.csv`](data/metadata/series_ipea_banco_mundial.csv) |
 
 # Outputs and auditability
 
@@ -65,13 +66,13 @@ Generated products use a shallow structure under [`outputs/figures/`](outputs/fi
 
 | Location | Purpose | Representative artifacts |
 |---|---|---|
-| [`outputs/figures/`](outputs/figures/) | EDA histograms, boxplots, upper-tail diagnostics, refined-versus-trusted comparisons, and scientific distributional or inequality figures. | `eda_refined_histogram_income_page_01.png`, `eda_trusted_boxplot_income_page_01.png`, `eda_compare_outlier_income_upper_tail_refined_trusted.png`, `paper_ccdf_income_gompertz_page_01.png`, `paper_inequality_gini_all_years.png` |
-| [`outputs/tables/`](outputs/tables/) | Cleaning diagnostics, thresholds, frequencies, descriptive statistics, and scientific summary, CCDF, and inequality tables. | `eda_cleaning_audit.csv`, `eda_cleaning_thresholds.csv`, `eda_refined_descriptive_statistics.csv`, `paper_annual_summary.csv`, `paper_annual_inequality_indices.csv`, `paper_ccdf_income_nominal_adjusted.parquet` |
+| [`outputs/figures/`](outputs/figures/) | EDA histograms, boxplots, upper-tail diagnostics, refined-versus-trusted comparisons, and scientific distributional or inequality figures. | `eda_refined_histogram_income_page_01.png`, `paper_lorenz_income_annotated_g_p_k_z_page_01.png`, `paper_income_groups_p80_p99_p100_absolute_2025_usd_all_years.png`, `paper_gini_external_validation.png` |
+| [`outputs/tables/`](outputs/tables/) | Cleaning diagnostics, thresholds, frequencies, descriptive statistics, and scientific summary, CCDF, inequality, income-group, and external-validation tables. | `eda_cleaning_audit.csv`, `paper_annual_inequality_indices.csv`, `paper_annual_income_groups_p80_p99_p100_2025_usd.csv`, `paper_gini_external_comparison.csv` |
 | [`outputs/manifest.csv`](outputs/manifest.csv) | Inventory of generated analysis artifacts. | Complete output manifest. |
 
 # Reproducibility
 
-Install the project in editable mode with `pip install -e '.[dev]'`. Running `pnad-income --refined data/refined --trusted data/trusted --metadata data/metadata/pnad_metadata.csv --output outputs` rebuilds the trusted layer, executes the 1976–2025 analysis, and writes all audit and scientific artifacts. Pull requests run tests and a complete temporary pipeline. After changes reach `main`, GitHub Actions rebuilds `data/trusted/` and `outputs/`, audits the expected files, uploads the outputs as an artifact, and commits regenerated trusted datasets and analysis products when they change.
+Install the project in editable mode with `pip install -e '.[dev]'`. Running `pnad-income --refined data/refined --trusted data/trusted --metadata data/metadata/pnad_metadata.csv --gini-references data/metadata/series_ipea_banco_mundial.csv --plot-columns 3 --output outputs` rebuilds the trusted layer, executes the 1976–2025 analysis, and writes all audit and scientific artifacts. `--plot-columns` controls the number of columns in the annotated annual inequality grid and defaults to three. Pull requests run tests and a complete temporary pipeline. After changes reach `main`, GitHub Actions rebuilds `data/trusted/` and `outputs/`, audits the expected files, uploads the outputs as an artifact, and commits regenerated trusted datasets and analysis products when they change.
 
 # Author
 

@@ -9,6 +9,13 @@ import numpy as np
 import pandas as pd
 
 REQUIRED_REFERENCE_COLUMNS = {"year", "gini", "source"}
+DEFAULT_GINI_REFERENCE_PATH = (
+    Path(__file__).resolve().parent.parent / "data" / "metadata" / "series_ipea_banco_mundial.csv"
+)
+GINI_REFERENCE_SOURCE_LABELS = {
+    "ipea": "IPEA",
+    "banco_mundial": "Banco Mundial",
+}
 
 
 def _values(values, *, sort: bool = False) -> np.ndarray:
@@ -51,6 +58,27 @@ def top_income_share(values, fraction: float) -> float:
     if population.size == 0:
         return np.nan
     return float(1 - np.interp(1 - fraction, population, income))
+
+
+def income_group_totals(values) -> dict[str, float]:
+    """Split aggregate income into the bottom 80%, next 19%, and top 1%."""
+    x = _values(values, sort=True)
+    if x.size == 0:
+        return {"p80": np.nan, "p99": np.nan, "p100": np.nan, "total": np.nan}
+
+    population, income = lorenz_curve(x)
+    total = float(x.sum())
+    cumulative_80, cumulative_99 = np.interp([0.80, 0.99], population, income) * total
+    groups = {
+        "p80": float(cumulative_80),
+        "p99": float(cumulative_99 - cumulative_80),
+        "p100": float(total - cumulative_99),
+        "total": total,
+    }
+    # Compute the last component as a residual so the three bars close exactly
+    # to the observed annual aggregate despite floating-point interpolation.
+    groups["p100"] = groups["total"] - groups["p80"] - groups["p99"]
+    return groups
 
 
 def pietra_index(values) -> float:
@@ -329,6 +357,21 @@ def annual_inequality_indices(
     return pd.DataFrame(rows).sort_values("year").reset_index(drop=True)
 
 
+def annual_income_group_totals(
+    df: pd.DataFrame,
+    value_col: str = "income",
+    year_col: str = "year",
+) -> pd.DataFrame:
+    """Return absolute annual income totals for p80, p99, and p100 groups."""
+    if {value_col, year_col}.difference(df.columns):
+        raise KeyError(f"Required columns '{year_col}' and '{value_col}' are not both present.")
+    rows = []
+    for year, group in df.groupby(year_col, sort=True):
+        values = pd.to_numeric(group[value_col], errors="coerce")
+        rows.append({"year": int(year), **income_group_totals(values)})
+    return pd.DataFrame(rows, columns=["year", "p80", "p99", "p100", "total"])
+
+
 def geometric_thresholds(
     values,
     base: float = 1.05,
@@ -468,10 +511,21 @@ def compare_income_measures_ccdf(
 
 def load_gini_reference(path: str | Path) -> pd.DataFrame:
     frame = pd.read_csv(Path(path))
-    missing = REQUIRED_REFERENCE_COLUMNS.difference(frame.columns)
-    if missing:
+    if REQUIRED_REFERENCE_COLUMNS.issubset(frame.columns):
+        frame = frame.loc[:, ["year", "gini", "source"]].copy()
+    elif "ano" in frame.columns and set(GINI_REFERENCE_SOURCE_LABELS).intersection(frame.columns):
+        value_columns = [column for column in GINI_REFERENCE_SOURCE_LABELS if column in frame.columns]
+        frame = frame.melt(
+            id_vars="ano",
+            value_vars=value_columns,
+            var_name="source",
+            value_name="gini",
+        ).rename(columns={"ano": "year"})
+        frame["source"] = frame["source"].map(GINI_REFERENCE_SOURCE_LABELS)
+    else:
+        missing = REQUIRED_REFERENCE_COLUMNS.difference(frame.columns)
         raise ValueError("Gini reference is missing: " + ", ".join(sorted(missing)))
-    frame = frame.copy()
+
     frame["year"] = pd.to_numeric(frame["year"], errors="raise").astype(int)
     frame["gini"] = pd.to_numeric(frame["gini"], errors="coerce")
     frame.loc[frame["gini"] > 1, "gini"] /= 100

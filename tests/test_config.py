@@ -1,3 +1,4 @@
+from analysis import DEFAULT_GINI_REFERENCE_PATH
 from data import DEFAULT_METADATA_PATH, DEFAULT_REFINED_PATH, DEFAULT_TRUSTED_PATH, load_metadata
 
 
@@ -9,6 +10,8 @@ def test_default_data_paths_use_data_layers():
     assert DEFAULT_REFINED_PATH.parent.name == "data"
     assert DEFAULT_TRUSTED_PATH.name == "trusted"
     assert DEFAULT_TRUSTED_PATH.parent.name == "data"
+    assert DEFAULT_GINI_REFERENCE_PATH.name == "series_ipea_banco_mundial.csv"
+    assert DEFAULT_GINI_REFERENCE_PATH.exists()
 
 
 def test_default_metadata_loads_expected_years():

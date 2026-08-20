@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-from analysis import build_ccdf_by_year, summary_statistics
+from analysis import annual_income_group_totals, build_ccdf_by_year, summary_statistics
 from plotting import (
     plot_ccdf,
     plot_ccdf_grid,
@@ -15,6 +15,7 @@ from plotting import (
     plot_gini_validation,
     plot_histogram,
     plot_histogram_grid,
+    plot_income_group_totals,
     plot_lorenz_curve,
     plot_lorenz_grid,
     plot_top_income_shares,
@@ -93,6 +94,14 @@ def test_grid_paginates_when_selection_exceeds_capacity():
     [plt.close(fig) for fig in figures]
 
 
+def test_lorenz_grid_defaults_to_three_columns_and_annotations_can_be_enabled():
+    figures = plot_lorenz_grid(_panel(), years=[2001, 2005, 2010, 2020, 2025], annotate=True)
+    grid = figures[0].axes[0].get_subplotspec().get_gridspec()
+    assert grid.ncols == 3
+    assert "G=" in figures[0].axes[0].texts[0].get_text()
+    [plt.close(fig) for fig in figures]
+
+
 def test_ccdf_grid_respects_selected_years_and_shape():
     ccdf = build_ccdf_by_year(_panel(), value_col="income")
     figures = plot_ccdf_grid(
@@ -122,7 +131,33 @@ def test_gini_validation_plot_renders_external_source():
     )
     fig = plot_gini_validation(summary, references)
     labels = [line.get_label() for line in fig.axes[0].lines]
-    assert "Calculated PNAD" in labels and "Reference" in labels
+    assert "PNAD (calculated)" in labels and "Reference" in labels
+    plt.close(fig)
+
+
+def test_gini_validation_leaves_missing_years_as_line_gaps():
+    summary = pd.DataFrame({"year": [2000, 2002], "income_gini": [0.55, 0.53]})
+    references = pd.DataFrame(
+        {"year": [2000, 2002], "gini": [0.56, 0.52], "source": ["IPEA", "IPEA"]}
+    )
+    fig = plot_gini_validation(summary, references)
+    for line in fig.axes[0].lines:
+        assert line.get_xdata().tolist() == [2000, 2001, 2002]
+        assert np.isnan(line.get_ydata()[1])
+    plt.close(fig)
+
+
+def test_income_group_bars_are_absolute_and_stack_to_annual_total():
+    panel = pd.DataFrame(
+        {"year": [2020] * 100 + [2021] * 100, "income": [*range(1, 101), *range(2, 202, 2)]}
+    )
+    totals = annual_income_group_totals(panel)
+    fig = plot_income_group_totals(totals)
+    stacked = np.zeros(len(totals))
+    for container in fig.axes[0].containers:
+        stacked += np.array([bar.get_height() for bar in container])
+    assert np.allclose(stacked, totals["total"])
+    assert stacked[1] == 2 * stacked[0]
     plt.close(fig)
 
 
