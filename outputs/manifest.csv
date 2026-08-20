@@ -7,12 +7,12 @@ table,eda_refined_metadata_sentinel_occurrences.csv,/home/runner/work/pnad_incom
 table,eda_refined_outlier_diagnostics.csv,/home/runner/work/pnad_income/pnad_income/outputs/tables/eda_refined_outlier_diagnostics.csv,7009
 table,eda_trusted_outlier_diagnostics.csv,/home/runner/work/pnad_income/pnad_income/outputs/tables/eda_trusted_outlier_diagnostics.csv,7000
 table,eda_trusted_data_quality_diagnostics.csv,/home/runner/work/pnad_income/pnad_income/outputs/tables/eda_trusted_data_quality_diagnostics.csv,129
-table,eda_cleaning_thresholds.csv,/home/runner/work/pnad_income/pnad_income/outputs/tables/eda_cleaning_thresholds.csv,5432
-table,eda_cleaning_audit.csv,/home/runner/work/pnad_income/pnad_income/outputs/tables/eda_cleaning_audit.csv,3176
+table,eda_cleaning_thresholds.csv,/home/runner/work/pnad_income/pnad_income/outputs/tables/eda_cleaning_thresholds.csv,5431
+table,eda_cleaning_audit.csv,/home/runner/work/pnad_income/pnad_income/outputs/tables/eda_cleaning_audit.csv,3175
 table,paper_pipeline_overview.csv,/home/runner/work/pnad_income/pnad_income/outputs/tables/paper_pipeline_overview.csv,149
 table,paper_annual_summary.csv,/home/runner/work/pnad_income/pnad_income/outputs/tables/paper_annual_summary.csv,53029
 table,paper_annual_inequality_indices.csv,/home/runner/work/pnad_income/pnad_income/outputs/tables/paper_annual_inequality_indices.csv,20356
-table,paper_ccdf_income_nominal_adjusted.parquet,/home/runner/work/pnad_income/pnad_income/outputs/tables/paper_ccdf_income_nominal_adjusted.parquet,1201319
+table,paper_ccdf_income_nominal_adjusted.parquet,/home/runner/work/pnad_income/pnad_income/outputs/tables/paper_ccdf_income_nominal_adjusted.parquet,1201315
 figure,paper_inequality_gini_all_years.png,/home/runner/work/pnad_income/pnad_income/outputs/figures/paper_inequality_gini_all_years.png,86062
 figure,paper_inequality_top_income_shares_all_years.png,/home/runner/work/pnad_income/pnad_income/outputs/figures/paper_inequality_top_income_shares_all_years.png,127820
 figure,paper_inequality_extended_pietra_k_z_all_years.png,/home/runner/work/pnad_income/pnad_income/outputs/figures/paper_inequality_extended_pietra_k_z_all_years.png,105558
