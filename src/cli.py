@@ -5,8 +5,8 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from .outputs import export_analysis_outputs
-from .pipeline import PipelineConfig, run_pipeline
+from outputs import export_analysis_outputs
+from pipeline import PipelineConfig, run_pipeline
 
 
 def _parser() -> argparse.ArgumentParser:

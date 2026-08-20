@@ -1,6 +1,6 @@
 import numpy as np
 
-from pnad_income.analysis import (
+from analysis import (
     extended_inequality_statistics,
     gini,
     lorenz_curve,

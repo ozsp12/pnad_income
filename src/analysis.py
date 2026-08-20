@@ -389,6 +389,7 @@ def compute_ccdf(
     left, right = edges[:-1], edges[1:]
     total = x.size
 
+    # Searchsorted reproduces the empirical count #(X >= x) exactly without repeated full-array scans.
     sorted_x = np.sort(x)
     ccdf = (total - np.searchsorted(sorted_x, left, side="left")) / total
     if scale == "percent":

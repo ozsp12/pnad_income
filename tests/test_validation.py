@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 
-from pnad_income.analysis import compare_gini_series, gini_validation_statistics
+from analysis import compare_gini_series, gini_validation_statistics
 
 
 def test_compare_gini_series_aligns_by_year_and_source():

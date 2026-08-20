@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 
 PACKAGE_ROOT = Path(__file__).resolve().parent
-REPOSITORY_ROOT = PACKAGE_ROOT.parents[1]
+REPOSITORY_ROOT = PACKAGE_ROOT.parent
 DEFAULT_METADATA_PATH = REPOSITORY_ROOT / "metadata" / "pnad_metadata.csv"
 
 SUPPORTED_FILE_SUFFIXES = {".parquet", ".csv", ".feather", ".pkl", ".pickle", ".xlsx", ".xls"}
@@ -166,6 +166,7 @@ def standardize_income_frame(raw: pd.DataFrame, spec: pd.Series) -> pd.DataFrame
     df = raw.copy()
     missing_code = float(spec["missing_income_code"]) if pd.notna(spec["missing_income_code"]) else None
     df["income_raw"] = pd.to_numeric(df["income_raw"], errors="coerce")
+    # Survey-specific sentinel codes are metadata, not legitimate income observations.
     if missing_code is not None:
         df = df.loc[df["income_raw"] != missing_code].copy()
 
@@ -231,6 +232,7 @@ def adjust_income_to_2025(
     inflation = pd.to_numeric(out["inflation_to_2025"], errors="coerce")
     for column in income_columns:
         if column in out.columns:
+            # Within each year this is a positive scale transformation, preserving income ranks.
             out[f"{column}_adj"] = pd.to_numeric(out[column], errors="coerce") / exchange * inflation
     return out
 

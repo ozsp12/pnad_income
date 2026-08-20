@@ -9,9 +9,10 @@ from typing import Iterable
 import matplotlib.pyplot as plt
 import pandas as pd
 
-from .analysis import annual_inequality_indices, compare_gini_series, gini_validation_statistics
-from .pipeline import PipelineResults, pipeline_overview
-from .plotting import (
+from analysis import annual_inequality_indices, compare_gini_series, gini_validation_statistics
+from descriptive import DescriptiveStatistics
+from pipeline import PipelineResults, pipeline_overview
+from plotting import (
     plot_ccdf,
     plot_ccdf_grid,
     plot_extended_inequality_evolution,
@@ -35,16 +36,46 @@ from .plotting import (
 
 @dataclass(frozen=True)
 class OutputPaths:
+    """Canonical output tree separating exploratory diagnostics from paper results."""
+
     root: Path
     figures: Path
     tables: Path
+    figures_eda: Path
+    figures_paper: Path
+    eda_histograms: Path
+    eda_boxplots: Path
+    eda_outliers: Path
+    paper_ccdf: Path
+    paper_lorenz: Path
+    paper_inequality: Path
+    tables_eda: Path
+    tables_paper: Path
 
 
 def prepare_output_paths(output_root: str | Path) -> OutputPaths:
     root = Path(output_root).expanduser().resolve()
-    paths = OutputPaths(root, root / "figures", root / "tables")
-    for path in (paths.root, paths.figures, paths.tables):
-        path.mkdir(parents=True, exist_ok=True)
+    figures = root / "figures"
+    tables = root / "tables"
+    figures_eda = figures / "eda"
+    figures_paper = figures / "paper"
+    paths = OutputPaths(
+        root=root,
+        figures=figures,
+        tables=tables,
+        figures_eda=figures_eda,
+        figures_paper=figures_paper,
+        eda_histograms=figures_eda / "histograms",
+        eda_boxplots=figures_eda / "boxplots",
+        eda_outliers=figures_eda / "outliers",
+        paper_ccdf=figures_paper / "ccdf",
+        paper_lorenz=figures_paper / "lorenz",
+        paper_inequality=figures_paper / "inequality",
+        tables_eda=tables / "eda",
+        tables_paper=tables / "paper",
+    )
+    for directory in paths.__dict__.values():
+        Path(directory).mkdir(parents=True, exist_ok=True)
     return paths
 
 
@@ -126,6 +157,7 @@ def export_analysis_outputs(
     paths = prepare_output_paths(output_root)
     manifest: list[dict[str, object]] = []
     indices = annual_inequality_indices(results.panel)
+    eda = DescriptiveStatistics(results.panel)
 
     tables = {
         "pipeline_overview.csv": pipeline_overview(results),
@@ -133,6 +165,10 @@ def export_analysis_outputs(
         "annual_inequality_indices.csv": indices,
         "ccdf_nominal_adjusted.parquet": results.ccdf_nominal_adjusted,
         "data_quality_diagnostics.csv": build_diagnostics(results),
+        "descriptive_statistics.csv": eda.annual_summary(),
+        "value_frequencies.csv": eda.value_frequencies(),
+        "sentinel_candidates.csv": eda.sentinel_candidates(),
+        "outlier_diagnostics.csv": eda.outlier_diagnostics(),
     }
     if not results.ccdf_habitual_effective.empty:
         tables["ccdf_habitual_effective.parquet"] = results.ccdf_habitual_effective
@@ -147,7 +183,17 @@ def export_analysis_outputs(
             }
         )
 
-    saved_tables = [save_table(frame, paths.tables / name) for name, frame in tables.items()]
+    eda_table_names = {
+        "data_quality_diagnostics.csv",
+        "descriptive_statistics.csv",
+        "value_frequencies.csv",
+        "sentinel_candidates.csv",
+        "outlier_diagnostics.csv",
+    }
+    saved_tables = []
+    for name, frame in tables.items():
+        directory = paths.tables_eda if name in eda_table_names else paths.tables_paper
+        saved_tables.append(save_table(frame, directory / name))
     manifest.extend(_rows(saved_tables, "table"))
 
     scalar_figures = {
@@ -165,7 +211,7 @@ def export_analysis_outputs(
         scalar_figures["gini_external_validation.png"] = plot_gini_validation(results.summary, gini_references)
 
     saved_figures = [
-        save_figure(figure, paths.figures / name, dpi=dpi)
+        save_figure(figure, paths.paper_inequality / name, dpi=dpi)
         for name, figure in scalar_figures.items()
     ]
     manifest.extend(_rows(saved_figures, "figure"))
@@ -175,14 +221,7 @@ def export_analysis_outputs(
     page_specs = [
         (
             "histogram_income_log_frequency",
-            plot_histogram_grid(
-                results.panel,
-                years=years,
-                bins=histogram_bins,
-                yscale="log",
-                nrows=complete_nrows,
-                ncols=complete_ncols,
-            ),
+            eda.histogram_pages(bins=histogram_bins, max_panels=complete_nrows * complete_ncols, ncols=complete_ncols),
         ),
         (
             "ccdf_income_loglog",
@@ -232,7 +271,16 @@ def export_analysis_outputs(
         ),
     ]
     for stem, figures in page_specs:
-        manifest.extend(_rows(_save_pages(figures, paths.figures, stem, dpi), "figure"))
+        if stem.startswith("histogram"):
+            directory = paths.eda_histograms
+        elif stem.startswith("ccdf"):
+            directory = paths.paper_ccdf
+        else:
+            directory = paths.paper_lorenz
+        manifest.extend(_rows(_save_pages(figures, directory, stem, dpi), "figure"))
+
+    manifest.extend(_rows(_save_pages(eda.boxplot_pages(max_panels=complete_nrows * complete_ncols, ncols=complete_ncols), paths.eda_boxplots, "boxplot_income", dpi), "figure"))
+    manifest.extend(_rows([save_figure(eda.outlier_overview_figure(), paths.eda_outliers / "upper_tail_diagnostics_all_years.png", dpi=dpi)], "figure"))
 
     if selected_year is not None:
         year = int(selected_year)
@@ -249,7 +297,15 @@ def export_analysis_outputs(
             f"lorenz_income_{year}_annotated_g_p_k_z.png": plot_lorenz_curve(results.panel, year, annotate=True),
             f"ccdf_nominal_vs_adjusted_{year}_loglog.png": plot_measure_comparison(ccdf, year),
         }
-        paths_saved = [save_figure(fig, paths.figures / name, dpi=dpi) for name, fig in individual.items()]
+        paths_saved = []
+        for name, fig in individual.items():
+            if name.startswith("histogram"):
+                directory = paths.eda_histograms
+            elif name.startswith("ccdf"):
+                directory = paths.paper_ccdf
+            else:
+                directory = paths.paper_lorenz
+            paths_saved.append(save_figure(fig, directory / name, dpi=dpi))
         manifest.extend(_rows(paths_saved, "figure"))
 
     if selected_years is not None:
@@ -304,7 +360,13 @@ def export_analysis_outputs(
             ),
         ]
         for stem, figures in selected_specs:
-            manifest.extend(_rows(_save_pages(figures, paths.figures, stem, dpi), "figure"))
+            if stem.startswith("selected_histogram"):
+                directory = paths.eda_histograms
+            elif stem.startswith("selected_ccdf"):
+                directory = paths.paper_ccdf
+            else:
+                directory = paths.paper_lorenz
+            manifest.extend(_rows(_save_pages(figures, directory, stem, dpi), "figure"))
 
     manifest_frame = pd.DataFrame(manifest)
     manifest_path = save_table(manifest_frame, paths.root / "manifest.csv")

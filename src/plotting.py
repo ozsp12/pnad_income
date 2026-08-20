@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-from .analysis import inequality_statistics, lorenz_curve
+from analysis import inequality_statistics, lorenz_curve
 
 DEFAULT_NCOLS = 4
 DEFAULT_MAX_PANELS = 24
@@ -175,6 +175,7 @@ def plot_histogram_grid(
     return figures
 
 
+# Keep the empirical survival function on the probability scale throughout plotting.
 def _ccdf_probability(frame) -> np.ndarray:
     values = frame["ccdf"].to_numpy(float)
     finite = values[np.isfinite(values)]
@@ -188,18 +189,18 @@ def _ccdf_xy(frame, transform):
     probability = _ccdf_probability(frame)
     if transform == "linear":
         mask = np.isfinite(x) & np.isfinite(probability)
-        return x[mask], 100.0 * probability[mask]
+        return x[mask], probability[mask]
     if transform == "loglog":
         mask = np.isfinite(x) & np.isfinite(probability) & (x > 0) & (probability > 0)
-        return x[mask], 100.0 * probability[mask]
+        return x[mask], probability[mask]
     if transform in {"gompertz", "double_log"}:
         mask = np.isfinite(x) & np.isfinite(probability) & (probability > 0) & (probability < 1)
-        return x[mask], np.log(-np.log(probability[mask]))
+        return x[mask], -np.log(-np.log(probability[mask]))
     raise ValueError("transform must be 'linear', 'loglog', 'gompertz', or 'double_log'.")
 
 
 def _ccdf_ylabel(transform: str) -> str:
-    return "ln[-ln(S(x))]" if transform in {"gompertz", "double_log"} else "CCDF [%]"
+    return "-ln[-ln(S(x))]" if transform in {"gompertz", "double_log"} else "S(x)"
 
 
 def _plot_ccdf_line(ax, frame, transform, label=None):

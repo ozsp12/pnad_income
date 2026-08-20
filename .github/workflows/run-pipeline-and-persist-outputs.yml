@@ -49,7 +49,7 @@ jobs:
       - name: Execute analysis pipeline
         if: github.event_name != 'pull_request'
         run: |
-          python -m pnad_income \
+          pnad-income \
             --database dados_refined \
             --output outputs \
             --start-year 1976 \
@@ -65,24 +65,30 @@ jobs:
 
           required = [
               Path('outputs/manifest.csv'),
-              Path('outputs/tables/pipeline_overview.csv'),
-              Path('outputs/tables/annual_summary.csv'),
-              Path('outputs/tables/annual_inequality_indices.csv'),
-              Path('outputs/tables/ccdf_nominal_adjusted.parquet'),
-              Path('outputs/tables/data_quality_diagnostics.csv'),
-              Path('outputs/figures/gini_income_all_years.png'),
-              Path('outputs/figures/inequality_indices_all_years.png'),
-              Path('outputs/figures/zanardi_index_all_years.png'),
-              Path('outputs/figures/histogram_income_log_frequency_page_01.png'),
-              Path('outputs/figures/ccdf_income_loglog_page_01.png'),
-              Path('outputs/figures/ccdf_income_gompertz_page_01.png'),
+              Path('outputs/tables/paper/pipeline_overview.csv'),
+              Path('outputs/tables/paper/annual_summary.csv'),
+              Path('outputs/tables/paper/annual_inequality_indices.csv'),
+              Path('outputs/tables/paper/ccdf_nominal_adjusted.parquet'),
+              Path('outputs/tables/eda/data_quality_diagnostics.csv'),
+              Path('outputs/tables/eda/descriptive_statistics.csv'),
+              Path('outputs/tables/eda/value_frequencies.csv'),
+              Path('outputs/tables/eda/sentinel_candidates.csv'),
+              Path('outputs/tables/eda/outlier_diagnostics.csv'),
+              Path('outputs/figures/paper/inequality/gini_income_all_years.png'),
+              Path('outputs/figures/paper/inequality/inequality_indices_all_years.png'),
+              Path('outputs/figures/paper/inequality/zanardi_index_all_years.png'),
+              Path('outputs/figures/eda/histograms/histogram_income_log_frequency_page_01.png'),
+              Path('outputs/figures/eda/boxplots/boxplot_income_page_01.png'),
+              Path('outputs/figures/eda/outliers/upper_tail_diagnostics_all_years.png'),
+              Path('outputs/figures/paper/ccdf/ccdf_income_loglog_page_01.png'),
+              Path('outputs/figures/paper/ccdf/ccdf_income_gompertz_page_01.png'),
           ]
           missing = [str(path) for path in required if not path.exists()]
-          figures = list(Path('outputs/figures').glob('*.png'))
+          figures = list(Path('outputs/figures').rglob('*.png'))
           forbidden = [
               Path('outputs/reports'),
-              *Path('outputs/figures').glob('*_linear*.png'),
-              *Path('outputs/figures').glob('*double_log_legacy*.png'),
+              *Path('outputs/figures').rglob('*_linear*.png'),
+              *Path('outputs/figures').rglob('*double_log_legacy*.png'),
           ]
           forbidden_existing = [str(path) for path in forbidden if path.exists()]
           print('FIGURE_COUNT', len(figures))
