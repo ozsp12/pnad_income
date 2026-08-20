@@ -39,22 +39,10 @@ jobs:
         if: github.event_name == 'pull_request' && github.head_ref == 'loop-engineering-eda' && hashFiles('scripts/refactor_loop_engineering.py') != ''
         run: |
           python scripts/refactor_loop_engineering.py
-          python - <<'PY'
-          from pathlib import Path
-          import re
-          path = Path('.github/workflows/run-pipeline-and-persist-outputs.yml')
-          text = path.read_text(encoding='utf-8')
-          text = re.sub(
-              r"\n      # LOOP_ENGINEERING_BOOTSTRAP_START.*?      # LOOP_ENGINEERING_BOOTSTRAP_END\n",
-              "\n",
-              text,
-              flags=re.S,
-          )
-          path.write_text(text, encoding='utf-8')
-          PY
+          git checkout HEAD -- .github/workflows/run-pipeline-and-persist-outputs.yml .github/workflows/refactor-loop-engineering.yml
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add -- README.md pyproject.toml src tests .github/workflows scripts
+          git add -- README.md pyproject.toml src tests scripts
           if ! git diff --cached --quiet; then
             git commit -m 'refactor EDA, CCDF diagnostics, and repository layout [skip ci]'
             git push origin HEAD:${{ github.head_ref }}
