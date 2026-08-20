@@ -1,4 +1,4 @@
-from pnad_income.config import DEFAULT_METADATA_PATH, load_metadata
+from pnad_income.data import DEFAULT_METADATA_PATH, load_metadata
 
 
 def test_default_metadata_path_uses_metadata_directory():

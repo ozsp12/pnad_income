@@ -5,7 +5,6 @@ matplotlib.use("Agg")
 
 import pandas as pd
 
-from pnad_income.distributions import build_ccdf_by_year
 from pnad_income.outputs import build_diagnostics, prepare_output_paths, save_figure, save_table
 from pnad_income.plotting import plot_histogram
 

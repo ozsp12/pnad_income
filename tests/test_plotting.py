@@ -6,8 +6,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import pandas as pd
 
-from pnad_income.distributions import build_ccdf_by_year
-from pnad_income.inequality import summary_statistics
+from pnad_income.analysis import build_ccdf_by_year, summary_statistics
 from pnad_income.plotting import (
     plot_ccdf, plot_ccdf_grid, plot_extended_inequality_evolution,
     plot_gini_validation, plot_histogram, plot_histogram_grid,
