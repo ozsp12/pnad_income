@@ -1,90 +1,56 @@
-# Brazilian PNAD Income Dataset, 1976–2025
+# PNAD Income Distribution in Brazil, 1976–2025
 
-This repository contains a harmonized longitudinal dataset of Brazilian household per-capita income derived from PNAD and PNAD Contínua, together with the code used to analyze income distributions and inequality from 1976 to 2025.
+This repository provides a harmonized longitudinal dataset and reproducible analysis pipeline for the study of Brazilian household per-capita income distributions from 1976 to 2025. The project is intended for academic analysis of income distributions, long-run inequality, and distributional regimes.
 
-The analytical database contains 45 survey years. No record is available for 1980, 1991, 1994, 2000, or 2010.
+## Data sources
+
+The microdata are obtained from the **Instituto Brasileiro de Geografia e Estatística (IBGE)**:
+
+- **PNAD — Pesquisa Nacional por Amostra de Domicílios**, annual microdata used through 2015: [IBGE PNAD microdata](https://ftp.ibge.gov.br/Trabalho_e_Rendimento/Pesquisa_Nacional_por_Amostra_de_Domicilios_anual/microdados/).
+- **PNAD Contínua — Pesquisa Nacional por Amostra de Domicílios Contínua**, used from 2016 onward: [IBGE PNAD Contínua microdata](https://ftp.ibge.gov.br/Trabalho_e_Rendimento/Pesquisa_Nacional_por_Amostra_de_Domicilios_continua/Trimestral/Microdados/).
+
+The exact survey, income variable, fixed-width position where applicable, missing-value code, original currency, monetary factors, and year-specific source URL are recorded in [`metadata/pnad_metadata.csv`](metadata/pnad_metadata.csv).
+
+The analytical series contains **45 survey years**. The years **1980, 1991, 1994, 2000, and 2010** are absent from the harmonized database.
+
+## Analytical criteria
+
+The primary quantity is harmonized **household per-capita income**. Year-specific PNAD variables are mapped to a common analytical field while preserving the annual source files in `dados_refined/`.
+
+The current analysis follows these criteria:
+
+- invalid and survey-specific missing-income codes are excluded according to the annual metadata;
+- finite zero-income observations are retained when they are part of the empirical distribution, but logarithmic analyses use strictly positive support;
+- monetary comparison across years uses the year-level exchange and inflation factors stored in the metadata, with
+
+  $$
+  y_{\mathrm{USD},2025}=\frac{y_t}{E_t}\,I_{t\rightarrow2025};
+  $$
+
+- empirical CCDFs are evaluated on a geometric income grid and used to study the distributional tail;
+- Pareto-type behavior is examined through the CCDF in log-log coordinates, while Gompertz-type behavior is examined through the corresponding double-log survival transformation;
+- inequality measures are computed from the harmonized annual distributions, including Gini, Pietra, Kolkata, Zanardi, Theil, Atkinson, top-income shares, and related concentration measures;
+- the present estimators are **record-weighted**. Population inference requires the appropriate PNAD sampling weights and survey-design information.
+
+The external provenance and construction of the monetary series used for exchange-rate and inflation harmonization will be specified explicitly in the technical documentation.
 
 ## Repository structure
 
 ```text
 pnad_income/
-├── dados_refined/              # annual analytical Parquet files
-├── metadata/                   # year-level metadata and validation references
-├── notebooks/                  # single scientific analysis notebook
-├── src/pnad_income/            # reusable implementation
-├── tests/                      # automated tests
-├── docs/                       # methodology and schema documentation
-└── outputs/                    # generated tables, figures, and reports
+├── dados_refined/       # annual harmonized Parquet files
+├── metadata/            # survey definitions and year-level monetary metadata
+├── src/pnad_income/     # analytical implementation
+├── tests/               # automated validation
+├── outputs/             # generated figures, tables, and manifest
+└── README.md
 ```
 
-The annual records in `dados_refined/` use the published schema:
+## Technical documentation
 
-| Field | Meaning |
-|---|---|
-| `ano` | survey year |
-| `renda` | refined household per-capita income |
-
-The package maps these fields to `year` and `income` in memory. The files themselves are not rewritten during analysis.
-
-## Metadata and monetary harmonization
-
-[`metadata/pnad_metadata.csv`](metadata/pnad_metadata.csv) records the year-specific survey variable, fixed-width location where applicable, missing-value convention, currency, exchange factor, inflation factor, and source location.
-
-Income is expressed relative to the 2025 reference through
-
-$$
-y_{2025}=\frac{y}{E}I_{2025},
-$$
-
-where $y$ is the survey-year income, $E$ is the corresponding exchange factor, and $I_{2025}$ is the inflation adjustment factor.
-
-External annual Gini series used for validation belong under [`metadata/gini_references/`](metadata/gini_references/). Reference files must include documented provenance rather than hard-coded numerical arrays.
-
-## Analysis
-
-[`notebooks/pnad_income_pipeline.ipynb`](notebooks/pnad_income_pipeline.ipynb) is the single analysis notebook. Numerical implementation remains in [`src/pnad_income/`](src/pnad_income/); the notebook only configures, executes, displays, and exports the analysis.
-
-The pipeline produces annual descriptive statistics, Gini, Pietra, Kolkata and Zanardi measures, top-income shares, Theil and Atkinson indices, normalized Shannon and Herfindahl measures, histograms, CCDFs, Lorenz curves, nominal-versus-adjusted comparisons, diagnostics, and optional external Gini validation.
-
-All persistent products are generated through `pnad_income.outputs.export_analysis_outputs`. There is no second export script or duplicated analysis path.
-
-## Reproduction
-
-From the repository root:
-
-```bash
-python -m pip install -e ".[dev,notebooks]"
-pytest -q
-cd notebooks
-jupyter nbconvert \
-  --to notebook \
-  --execute pnad_income_pipeline.ipynb \
-  --output ../outputs/reports/pnad_income_pipeline_executed.ipynb \
-  --ExecutePreprocessor.timeout=1800
-```
-
-For interactive work, install the package first and then open the notebook with Jupyter. The editable installation is required because the project uses the standard `src/` package layout.
-
-## Distributional definitions
-
-For nonnegative income $X$, the empirical complementary cumulative distribution function is
-
-$$
-\widehat{\overline F}(x)=\frac{1}{N}\sum_{i=1}^{N}\mathbf{1}(X_i\ge x).
-$$
-
-Finite zero-income observations remain in the denominator. For ordered nonnegative observations $x_{(1)}\le\cdots\le x_{(N)}$, the unweighted Gini estimator is
-
-$$
-G=\frac{2\sum_{i=1}^{N} i x_{(i)}}{N\sum_{i=1}^{N}x_{(i)}}-\frac{N+1}{N}.
-$$
-
-The current analysis is record-weighted. Population inference from PNAD requires the appropriate survey weights and design information.
-
-## Documentation
-
-[`docs/methodology.md`](docs/methodology.md) contains the analytical definitions and transformations. [`docs/database_schema.md`](docs/database_schema.md) specifies the released data-record interface.
+A separate technical document will provide the complete methodological specification, including data provenance, annual variable mapping, monetary harmonization, CCDF construction, distributional hypotheses, inequality estimators, validation procedures, and reproducibility details. This README is intentionally limited to the scientific scope, source selection, and principal analytical criteria.
 
 ## Author
 
-**Dr. Osvaldo L. Santos-Pereira** — [Academic webpage](https://ozsp12.github.io/) · [Lattes](http://lattes.cnpq.br/6730251976463283) · [ORCID](https://orcid.org/0000-0003-2231-517X) · [Google Scholar](https://scholar.google.com/citations?user=HIZp0X8AAAAJ&hl=en) · [ResearchGate](https://www.researchgate.net/profile/Osvaldo-Santos-Pereira) · [GitHub](https://github.com/ozsp12) · [LinkedIn](https://www.linkedin.com/in/ozsp12)
+**Osvaldo L. Santos-Pereira**  
+[Academic webpage](https://ozsp12.github.io/) · [ORCID](https://orcid.org/0000-0003-2231-517X) · [GitHub](https://github.com/ozsp12)
