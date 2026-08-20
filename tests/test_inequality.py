@@ -1,6 +1,6 @@
 import numpy as np
 
-from pnad_income.inequality import (
+from pnad_income.analysis import (
     extended_inequality_statistics,
     gini,
     lorenz_curve,
@@ -37,7 +37,7 @@ def test_top_income_share_concentrated_distribution():
 
 def test_extended_statistics_contains_required_metrics():
     metrics = extended_inequality_statistics([0, 1, 2, 7])
-    assert {"gini", "pietra", "k", "zanardi", "top_10_share", "top_1_share", "top_0_1_share"} <= set(metrics)
+    assert {"gini", "pietra", "k", "zanardi", "legacy_z", "top_10_share", "top_1_share", "top_0_1_share"} <= set(metrics)
     assert 0 <= metrics["gini"] <= 1
     assert 0 <= metrics["pietra"] <= 1
     assert 0 <= metrics["k"] <= 1
