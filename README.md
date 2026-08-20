@@ -1,119 +1,90 @@
 # Brazilian PNAD Income Dataset, 1976–2025
 
-This repository contains a harmonized longitudinal dataset of Brazilian household per-capita income derived from the **Pesquisa Nacional por Amostra de Domicílios (PNAD)** and **PNAD Contínua**, together with the metadata and analytical code used to characterize the resulting income distributions from 1976 to 2025. The repository accompanies a data-descriptor manuscript under preparation for *Scientific Data*. Its primary purpose is scientific documentation and reproducibility: to make explicit how income information collected under changing survey instruments, variable definitions, file layouts, currencies, and historical monetary regimes was transformed into a consistent annual series suitable for distributional and inequality analysis.
+This repository contains a harmonized longitudinal dataset of Brazilian household per-capita income derived from PNAD and PNAD Contínua, together with the code used to analyze income distributions and inequality from 1976 to 2025.
 
-# Scientific scope
+The analytical database contains 45 survey years. No record is available for 1980, 1991, 1994, 2000, or 2010.
 
-The database covers **45 survey years** between 1976 and 2025. No annual record is included for 1980, 1991, 1994, 2000, or 2010, corresponding to years without observations in the assembled PNAD series. The historical PNAD and PNAD Contínua files are heterogeneous: the location and definition of the relevant income field change across years, and in several early surveys, household income must be combined with the number of household residents to obtain a per-capita measure. The harmonization procedure, therefore, treats each survey year as a documented measurement instance rather than assuming a fixed column schema through time. The year-specific variable map, fixed-width positions, missing-value conventions, monetary units, exchange factors, price indices, and source locations are recorded in [`config/pnad_metadata.csv`](config/pnad_metadata.csv).
-
-# Data records
-
-The analytical records are stored in [`dados_refined/`](dados_refined/) as one Parquet file for each available survey year:
+## Repository structure
 
 ```text
-pnad_refined_1976.parquet
-pnad_refined_1977.parquet
-...
-pnad_refined_2025.parquet
+pnad_income/
+├── dados_refined/              # annual analytical Parquet files
+├── metadata/                   # year-level metadata and validation references
+├── notebooks/                  # single scientific analysis notebook
+├── src/pnad_income/            # reusable implementation
+├── tests/                      # automated tests
+├── docs/                       # methodology and schema documentation
+└── outputs/                    # generated tables, figures, and reports
 ```
 
-Every current annual file has the same two-field schema:
+The annual records in `dados_refined/` use the published schema:
 
 | Field | Meaning |
 |---|---|
-| `ano` | Survey year |
-| `renda` | Refined household per-capita income measure for that survey year |
+| `ano` | survey year |
+| `renda` | refined household per-capita income |
 
-The files preserve these Portuguese field names in the data records. The analytical package maps them in memory to `year` and `income`; the Parquet records themselves are not rewritten during analysis. The current release contains a single longitudinal income measure. In particular, the refined 2016–2025 files do **not** contain a second effective-income field such as `VD4020`. Analyses requiring a distinct habitual-versus-effective income comparison, therefore, require an extended data release and are not inferred from the present records.
+The package maps these fields to `year` and `income` in memory. The files themselves are not rewritten during analysis.
 
-# Construction of the longitudinal income series
+## Metadata and monetary harmonization
 
-For each year, the PNAD variable used to represent household per-capita income is identified in the metadata. Where the source survey already contains the required per-capita income variable, that quantity is retained after cleaning. Where household income and household size are stored separately, per-capita income is constructed as
+[`metadata/pnad_metadata.csv`](metadata/pnad_metadata.csv) records the year-specific survey variable, fixed-width location where applicable, missing-value convention, currency, exchange factor, inflation factor, and source location.
 
-$$
-y_i=\frac{Y_i}{n_i},
-$$
-
-where $Y_i$ is household income and $n_i>0$ is the corresponding number of household residents. Historical survey-specific sentinel values used for missing income observations are removed before analysis. Household-size observations that cannot support a valid per-capita calculation are excluded from the corresponding transformation. Zero income, when present as a valid observation rather than a sentinel code, is retained in the analytical population.
-
-## Monetary harmonization
-
-Brazil underwent multiple currency regimes during the period covered by the database. To permit intertemporal comparison, the analytical pipeline attaches the year-specific monetary information stored in the metadata and constructs an income measure expressed relative to a common 2025 reference. The implemented transformation is
+Income is expressed relative to the 2025 reference through
 
 $$
 y_{2025}=\frac{y}{E}I_{2025},
 $$
 
-where $y$ denotes the survey-year income value, $E$ is the corresponding exchange factor, and $I_{2025}$ is the inflation adjustment factor to the 2025 reference. Nominal survey-year income and the harmonized measure are retained as distinct analytical quantities. This distinction is important because the monetary transformation changes the scale used for intertemporal comparison but does not change the ordering of observations within a given year.
+where $y$ is the survey-year income, $E$ is the corresponding exchange factor, and $I_{2025}$ is the inflation adjustment factor.
 
-## Distributional characterization
+External annual Gini series used for validation belong under [`metadata/gini_references/`](metadata/gini_references/). Reference files must include documented provenance rather than hard-coded numerical arrays.
 
-The dataset is evaluated using complementary approaches that describe different aspects of the empirical distribution. Annual histograms provide a direct inspection of frequency structure and extreme values. The complementary cumulative distribution function is evaluated as
+## Analysis
 
-$$
-\widehat{\overline F}(x) = \frac{1}{N}\sum_{i=1}^{N}\mathbf{1}(X_i\ge x),
-$$
+[`notebooks/pnad_income_pipeline.ipynb`](notebooks/pnad_income_pipeline.ipynb) is the single analysis notebook. Numerical implementation remains in [`src/pnad_income/`](src/pnad_income/); the notebook only configures, executes, displays, and exports the analysis.
 
-with geometrically spaced positive thresholds. Finite zero-income observations remain in the denominator $N$; consequently, the estimator represents the unconditional probability $P(X\ge x)$, rather than the conditional quantity $P(X\ge x\mid X>0)$. Income concentration is summarized through Lorenz curves and the Gini coefficient. For ordered nonnegative observations $x_{(1)}\le\cdots\le x_{(N)}$, the implemented unweighted estimator is
+The pipeline produces annual descriptive statistics, Gini, Pietra, Kolkata and Zanardi measures, top-income shares, Theil and Atkinson indices, normalized Shannon and Herfindahl measures, histograms, CCDFs, Lorenz curves, nominal-versus-adjusted comparisons, diagnostics, and optional external Gini validation.
 
-$$
-G = \frac{2\sum_{i=1}^{N} i x_{(i)}}{N\sum_{i=1}^{N}x_{(i)}} - \frac{N+1}{N}.
-$$
+All persistent products are generated through `pnad_income.outputs.export_analysis_outputs`. There is no second export script or duplicated analysis path.
 
-The combination of histograms, CCDFs, Lorenz curves, annual moments, and Gini coefficients provides both a quality-control layer and a compact description of the evolution of the income distribution across survey waves.
+## Reproduction
 
-# Technical validation
-
-Validation is performed at three levels. First, the annual records are checked for schema consistency, year identity, numeric income values, and correspondence between filenames and survey years. Second, the harmonized panel is checked for temporal coverage and the availability of the monetary metadata required for each survey wave. Third, the resulting distributions are examined through annual summary statistics, CCDFs, histograms, Lorenz curves, and Gini coefficients. The current repository contains **45 annual Parquet files**, all sharing the schema `renda, ano`. Automated tests cover database loading, schema normalization, preprocessing, CCDF construction, and inequality calculations. The complete analytical workflow is additionally executed from a clean kernel through the single research notebook described below.
-
-# Reproducible scientific analysis
-
-[`notebooks/pnad_income_pipeline.ipynb`](notebooks/pnad_income_pipeline.ipynb) is the sole analytical notebook. It is intended as a readable scientific record of the full analysis rather than as a location for implementation. The numerical procedures are encapsulated in [`src/pnad_income/`](src/pnad_income/), while the notebook organizes the analysis, documents the statistical definitions, and displays the resulting tables and figures.
-
-A complete execution of the notebook produces the following scientific outputs for the full set of available survey years:
-
-1. database coverage and schema diagnostics;
-2. the complete annual descriptive-statistics table;
-3. The Gini coefficient as a temporal series from 1976 to 2025;
-4. annual income histograms on a linear frequency scale;
-5. annual income histograms on a logarithmic frequency scale;
-6. annual empirical CCDFs on linear axes;
-7. annual empirical CCDFs on log-log axes;
-8. the historical $\ln[\ln(\mathrm{CCDF}[\%])]$ representation, retained as a legacy diagnostic and explicitly distinguished from the log-log analysis;
-9. Annual Lorenz curves for every available survey year;
-10. year-by-year comparison of nominal and 2025-reference CCDFs on log-log axes;
-11. availability diagnostics for additional income measures;
-12. final missingness and numerical-support diagnostics.
-
-The 45 annual distributions are displayed as paginated small-multiple figures rather than as a small set of representative years. Consequently, every survey wave in the harmonized database appears explicitly in the notebook. The Gini series is displayed in a single temporal figure, whereas histograms, CCDFs, Lorenz curves, and nominal-versus-adjusted comparisons are split across readable multi-panel pages covering the entire period. This separation between implementation and presentation ensures that the quantities shown in the notebook are generated by documented, testable functions rather than by hidden notebook state, duplicated year-specific code, or manually generated figures. A minimal local reproduction is:
+From the repository root:
 
 ```bash
-pip install -e ".[notebooks]"
+python -m pip install -e ".[dev,notebooks]"
+pytest -q
 cd notebooks
-jupyter nbconvert --to notebook --execute pnad_income_pipeline.ipynb \
-  --output pnad_income_pipeline_executed.ipynb
+jupyter nbconvert \
+  --to notebook \
+  --execute pnad_income_pipeline.ipynb \
+  --output ../outputs/reports/pnad_income_pipeline_executed.ipynb \
+  --ExecutePreprocessor.timeout=1800
 ```
 
-The notebook reads `../dados_refined` by default. A clean end-to-end execution across the entire repository database has been validated following the expansion of the annual graphical outputs.
+For interactive work, install the package first and then open the notebook with Jupyter. The editable installation is required because the project uses the standard `src/` package layout.
 
-# Repository contents
+## Distributional definitions
 
-[`dados_refined/`](dados_refined/) contains the annual analytical records.  
-[`config/pnad_metadata.csv`](config/pnad_metadata.csv) contains the longitudinal variable map and monetary metadata.  
-[`docs/methodology.md`](docs/methodology.md) records the mathematical and processing definitions  
-[`docs/database_schema.md`](docs/database_schema.md) specifies the data-record interface.  
-[`src/pnad_income/`](src/pnad_income/) contains the reusable analytical implementation  
-[`notebooks/pnad_income_pipeline.ipynb`](notebooks/pnad_income_pipeline.ipynb) contains the complete scientific analysis  
-[`tests/`](tests/) contains reproducibility checks for the core transformations and estimators.
+For nonnegative income $X$, the empirical complementary cumulative distribution function is
 
-# Intended use
+$$
+\widehat{\overline F}(x)=\frac{1}{N}\sum_{i=1}^{N}\mathbf{1}(X_i\ge x).
+$$
 
-The dataset is intended for longitudinal studies of Brazilian income distributions, inequality, distributional tails, monetary harmonization, and related statistical or econophysics analyses. Because survey instruments and variable definitions change over the five-decade interval, analyses should retain the year-specific metadata and should not interpret the series as if it originated from a single invariant survey design. When using the data for additional research, the annual refined records should be treated as the primary analytical data product and `config/pnad_metadata.csv` as the corresponding provenance and harmonization record.
+Finite zero-income observations remain in the denominator. For ordered nonnegative observations $x_{(1)}\le\cdots\le x_{(N)}$, the unweighted Gini estimator is
 
-# Author
+$$
+G=\frac{2\sum_{i=1}^{N} i x_{(i)}}{N\sum_{i=1}^{N}x_{(i)}}-\frac{N+1}{N}.
+$$
+
+The current analysis is record-weighted. Population inference from PNAD requires the appropriate survey weights and design information.
+
+## Documentation
+
+[`docs/methodology.md`](docs/methodology.md) contains the analytical definitions and transformations. [`docs/database_schema.md`](docs/database_schema.md) specifies the released data-record interface.
+
+## Author
 
 **Dr. Osvaldo L. Santos-Pereira** — [Academic webpage](https://ozsp12.github.io/) · [Lattes](http://lattes.cnpq.br/6730251976463283) · [ORCID](https://orcid.org/0000-0003-2231-517X) · [Google Scholar](https://scholar.google.com/citations?user=HIZp0X8AAAAJ&hl=en) · [ResearchGate](https://www.researchgate.net/profile/Osvaldo-Santos-Pereira) · [GitHub](https://github.com/ozsp12) · [LinkedIn](https://www.linkedin.com/in/ozsp12)
-
-## Manuscript and citation
-
-A formal citation should use the associated data-descriptor article once its bibliographic record or DOI is available. No DOI is assigned in this repository at present.
