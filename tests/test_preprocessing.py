@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 
-from pnad_income.preprocessing import (
+from pnad_income.data import (
     LEGACY_MANUAL_OUTLIER_CUTS,
     adjust_income_to_2025,
     apply_manual_outlier_cuts,
