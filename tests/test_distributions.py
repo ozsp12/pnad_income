@@ -1,6 +1,6 @@
 import numpy as np
 
-from pnad_income.analysis import compute_ccdf, geometric_thresholds
+from analysis import compute_ccdf, geometric_thresholds
 
 
 def test_ccdf_keeps_zero_income_in_denominator():

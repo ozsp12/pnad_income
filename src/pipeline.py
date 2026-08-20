@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pandas as pd
 
-from .analysis import compare_income_measures_ccdf, summary_statistics
-from .data import DEFAULT_METADATA_PATH, prepare_panel as prepare_data_panel
+from analysis import compare_income_measures_ccdf, summary_statistics
+from data import DEFAULT_METADATA_PATH, prepare_panel as prepare_data_panel
 
 
 @dataclass(frozen=True)

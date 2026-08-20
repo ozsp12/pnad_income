@@ -7,8 +7,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-from pnad_income.analysis import build_ccdf_by_year, summary_statistics
-from pnad_income.plotting import (
+from analysis import build_ccdf_by_year, summary_statistics
+from plotting import (
     plot_ccdf,
     plot_ccdf_grid,
     plot_extended_inequality_evolution,
@@ -59,7 +59,8 @@ def test_gompertz_transform_retains_tail_below_one_percent():
     y = fig.axes[0].lines[0].get_ydata()
     assert len(y) == 4
     assert np.isfinite(y).all()
-    assert "ln[-ln" in fig.axes[0].get_ylabel()
+    assert fig.axes[0].get_ylabel() == "-ln[-ln(S(x))]"
+    assert np.all(np.diff(y) < 0)
     plt.close(fig)
 
 
@@ -122,4 +123,20 @@ def test_gini_validation_plot_renders_external_source():
     fig = plot_gini_validation(summary, references)
     labels = [line.get_label() for line in fig.axes[0].lines]
     assert "Calculated PNAD" in labels and "Reference" in labels
+    plt.close(fig)
+
+
+def test_loglog_ccdf_remains_on_probability_scale():
+    ccdf = pd.DataFrame(
+        {
+            "year": [2025, 2025],
+            "measure": ["income", "income"],
+            "bin": [1.0, 2.0],
+            "ccdf": [1.0, 0.01],
+        }
+    )
+    fig = plot_ccdf(ccdf, year=2025, measure="income", transform="loglog")
+    y = fig.axes[0].lines[0].get_ydata()
+    assert np.allclose(y, [1.0, 0.01])
+    assert fig.axes[0].get_ylabel() == "S(x)"
     plt.close(fig)

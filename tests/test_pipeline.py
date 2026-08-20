@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pandas as pd
 
-from pnad_income.data import LEGACY_MANUAL_OUTLIER_CUTS, load_database, validate_database
-from pnad_income.pipeline import PipelineConfig, pipeline_overview, run_pipeline
+from data import LEGACY_MANUAL_OUTLIER_CUTS, load_database, validate_database
+from pipeline import PipelineConfig, pipeline_overview, run_pipeline
 
 
 def test_validate_database_requires_income():

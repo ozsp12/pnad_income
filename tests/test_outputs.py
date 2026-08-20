@@ -5,8 +5,8 @@ matplotlib.use("Agg")
 
 import pandas as pd
 
-from pnad_income.outputs import prepare_output_paths, save_figure, save_table
-from pnad_income.plotting import plot_histogram
+from outputs import prepare_output_paths, save_figure, save_table
+from plotting import plot_histogram
 
 
 def test_prepare_output_paths_creates_standard_tree(tmp_path):
@@ -14,6 +14,12 @@ def test_prepare_output_paths_creates_standard_tree(tmp_path):
     assert paths.root.is_dir()
     assert paths.figures.is_dir()
     assert paths.tables.is_dir()
+    assert paths.figures_eda.is_dir()
+    assert paths.figures_paper.is_dir()
+    assert paths.eda_histograms.is_dir()
+    assert paths.paper_ccdf.is_dir()
+    assert paths.tables_eda.is_dir()
+    assert paths.tables_paper.is_dir()
     assert not hasattr(paths, "reports")
 
 
