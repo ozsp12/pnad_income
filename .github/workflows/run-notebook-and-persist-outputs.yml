@@ -39,8 +39,10 @@ jobs:
       - name: Run tests
         run: pytest -q
 
-      - name: Prepare output directories
-        run: mkdir -p outputs/figures outputs/tables outputs/reports
+      - name: Prepare clean output directories
+        run: |
+          rm -rf outputs/figures outputs/tables outputs/reports outputs/manifest.csv
+          mkdir -p outputs/figures outputs/tables outputs/reports
 
       - name: Execute notebook and persist scientific outputs
         working-directory: notebooks
