@@ -15,7 +15,12 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-from analysis import annual_inequality_indices, compare_gini_series, gini_validation_statistics
+from analysis import (
+    annual_income_group_totals,
+    annual_inequality_indices,
+    compare_gini_series,
+    gini_validation_statistics,
+)
 from descriptive import DescriptiveStatistics
 from pipeline import PipelineResults, pipeline_overview
 from plotting import (
@@ -27,6 +32,7 @@ from plotting import (
     plot_gini_zanardi,
     plot_histogram,
     plot_histogram_grid,
+    plot_income_group_totals,
     plot_information_indices,
     plot_kolkata_pietra_relationships,
     plot_lorenz_curve,
@@ -97,6 +103,9 @@ ARTIFACT_DESCRIPTIONS = {
     "paper_annual_inequality_indices.csv": (
         "Annual inequality and concentration indices calculated from trusted data, including Gini, Pietra, Kolkata, Zanardi, Theil, Atkinson, top-income, Shannon, and Herfindahl measures."
     ),
+    "paper_annual_income_groups_p80_p99_p100_2025_usd.csv": (
+        "Absolute annual aggregate income in 2025 USD split into the bottom 80 percent, next 19 percent, and top 1 percent of trusted income records."
+    ),
     "paper_ccdf_income_nominal_adjusted.parquet": (
         "Annual empirical CCDF data for nominal and monetarily adjusted income, stored in Parquet format for reproducible distributional analysis and plotting."
     ),
@@ -117,6 +126,9 @@ ARTIFACT_DESCRIPTIONS = {
     ),
     "paper_inequality_top_income_shares_all_years.png": (
         "Temporal evolution of income shares held by the upper tail of the distribution, including the top 10%, 1%, and 0.1%."
+    ),
+    "paper_income_groups_p80_p99_p100_absolute_2025_usd_all_years.png": (
+        "Non-normalized stacked bars of annual aggregate income in 2025 USD for the bottom 80 percent, next 19 percent, and top 1 percent of trusted records."
     ),
     "paper_inequality_extended_pietra_k_z_all_years.png": (
         "Joint temporal evolution of the Pietra index, Kolkata k-index, and Zanardi Z statistic across the harmonized series."
@@ -295,12 +307,11 @@ def _describe_artifact(filename: str) -> str:
         "paper_ccdf_income_loglog": "Annual empirical income CCDFs in log-log coordinates for inspection of distributional shape and the upper tail.",
         "paper_ccdf_income_gompertz": "Annual Gompertz-transformed income CCDFs used as a complementary diagnostic of distributional form.",
         "paper_lorenz_income_annotated_g_p_k_z": "Annual Lorenz curves annotated with Gini G, Pietra P, Kolkata k, and Zanardi Z inequality measures.",
-        "paper_lorenz_income": "Annual Lorenz curves for the trusted income distributions.",
         "paper_ccdf_income_nominal_vs_adjusted_loglog": "Annual log-log comparison of nominal and monetarily adjusted income CCDFs.",
         "eda_trusted_selected_histogram_income": "Selected-year trusted-layer income histograms using the user-configured subplot grid.",
         "paper_selected_ccdf_income_loglog": "Selected-year empirical income CCDFs in log-log coordinates using the user-configured subplot grid.",
         "paper_selected_ccdf_income_gompertz": "Selected-year Gompertz-transformed income CCDFs using the user-configured subplot grid.",
-        "paper_selected_lorenz_income": "Selected-year Lorenz curves using the user-configured subplot grid.",
+        "paper_selected_lorenz_income_annotated_g_p_k_z": "Selected-year Lorenz curves annotated with Gini, Pietra, Kolkata, and Zanardi measures using the user-configured subplot grid.",
     }
     for stem, description in stems.items():
         if filename.startswith(stem):
@@ -316,8 +327,6 @@ def _describe_artifact(filename: str) -> str:
         return f"Gompertz-transformed trusted-income CCDF{year_text}."
     if filename.startswith("paper_lorenz_income_") and "annotated_g_p_k_z" in filename:
         return f"Lorenz curve{year_text}, annotated with Gini, Pietra, Kolkata, and Zanardi measures."
-    if filename.startswith("paper_lorenz_income_"):
-        return f"Trusted-income Lorenz curve{year_text}."
     if filename.startswith("paper_ccdf_income_nominal_vs_adjusted_"):
         return f"Log-log comparison of nominal and adjusted income CCDFs{year_text}."
 
@@ -406,6 +415,7 @@ def export_analysis_outputs(
     grid_ncols: int = 3,
     complete_nrows: int = 6,
     complete_ncols: int = 4,
+    inequality_ncols: int = 3,
     histogram_bins: int = 100,
     dpi: int = 200,
     gini_references: pd.DataFrame | None = None,
@@ -428,6 +438,7 @@ def export_analysis_outputs(
         )
 
     indices = annual_inequality_indices(results.panel)
+    income_groups = annual_income_group_totals(results.panel, value_col="income_adj")
     trusted = results.panel.copy()
     refined = refined_panel.copy() if refined_panel is not None else trusted.copy()
     if results.years:
@@ -450,6 +461,7 @@ def export_analysis_outputs(
         "paper_pipeline_overview.csv": pipeline_overview(results),
         "paper_annual_summary.csv": results.summary,
         "paper_annual_inequality_indices.csv": indices,
+        "paper_annual_income_groups_p80_p99_p100_2025_usd.csv": income_groups,
         "paper_ccdf_income_nominal_adjusted.parquet": results.ccdf_nominal_adjusted,
     }
     if not results.ccdf_habitual_effective.empty:
@@ -471,6 +483,10 @@ def export_analysis_outputs(
     scalar_figures = {
         "paper_inequality_gini_all_years.png": plot_gini_evolution(results.summary),
         "paper_inequality_top_income_shares_all_years.png": plot_top_income_shares(results.summary),
+        "paper_income_groups_p80_p99_p100_absolute_2025_usd_all_years.png": plot_income_group_totals(
+            income_groups,
+            value_col="income_adj",
+        ),
         "paper_inequality_extended_pietra_k_z_all_years.png": plot_extended_inequality_evolution(results.summary),
         "paper_inequality_indices_all_years.png": plot_primary_indices(indices),
         "paper_inequality_zanardi_all_years.png": plot_zanardi(indices),
@@ -553,16 +569,12 @@ def export_analysis_outputs(
             ),
         ),
         (
-            "paper_lorenz_income",
-            plot_lorenz_grid(results.panel, years=years, nrows=complete_nrows, ncols=complete_ncols),
-        ),
-        (
             "paper_lorenz_income_annotated_g_p_k_z",
             plot_lorenz_grid(
                 results.panel,
                 years=years,
                 nrows=complete_nrows,
-                ncols=complete_ncols,
+                ncols=inequality_ncols,
                 annotate=True,
             ),
         ),
@@ -591,7 +603,6 @@ def export_analysis_outputs(
             ),
             f"paper_ccdf_income_{year}_loglog.png": plot_ccdf(ccdf, year, transform="loglog"),
             f"paper_ccdf_income_{year}_gompertz.png": plot_ccdf(ccdf, year, transform="gompertz"),
-            f"paper_lorenz_income_{year}.png": plot_lorenz_curve(results.panel, year),
             f"paper_lorenz_income_{year}_annotated_g_p_k_z.png": plot_lorenz_curve(results.panel, year, annotate=True),
             f"paper_ccdf_income_nominal_vs_adjusted_{year}_loglog.png": plot_measure_comparison(ccdf, year),
         }
@@ -635,8 +646,14 @@ def export_analysis_outputs(
                 ),
             ),
             (
-                "paper_selected_lorenz_income",
-                plot_lorenz_grid(results.panel, years=selected, nrows=grid_nrows, ncols=grid_ncols),
+                "paper_selected_lorenz_income_annotated_g_p_k_z",
+                plot_lorenz_grid(
+                    results.panel,
+                    years=selected,
+                    nrows=grid_nrows,
+                    ncols=grid_ncols,
+                    annotate=True,
+                ),
             ),
         ]
         for stem, figures in selected_specs:

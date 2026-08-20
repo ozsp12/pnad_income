@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+from analysis import DEFAULT_GINI_REFERENCE_PATH, load_gini_reference
 from data import (
     DEFAULT_METADATA_PATH,
     DEFAULT_REFINED_PATH,
@@ -30,6 +31,17 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--ccdf-base", type=float, default=1.05)
     parser.add_argument("--histogram-bins", type=int, default=100)
     parser.add_argument(
+        "--plot-columns",
+        type=int,
+        default=3,
+        help="Number of columns in the annotated annual inequality grid (default: 3).",
+    )
+    parser.add_argument(
+        "--gini-references",
+        default=str(DEFAULT_GINI_REFERENCE_PATH),
+        help="CSV containing the IPEA and World Bank Gini reference series.",
+    )
+    parser.add_argument(
         "--outlier-method",
         choices=sorted(IncomeDataCleaner.METHODS),
         default="log_mad",
@@ -46,6 +58,8 @@ def _parser() -> argparse.ArgumentParser:
 
 def main() -> None:
     args = _parser().parse_args()
+    if args.plot_columns < 1:
+        raise ValueError("--plot-columns must be at least 1.")
     refined_path = Path(args.refined)
     trusted_path = Path(args.trusted)
     metadata_path = Path(args.metadata)
@@ -70,6 +84,7 @@ def main() -> None:
         ccdf_base=args.ccdf_base,
     )
     results = run_pipeline(config)
+    gini_references = load_gini_reference(args.gini_references)
     manifest = export_analysis_outputs(
         results,
         output_root=Path(args.output),
@@ -77,6 +92,8 @@ def main() -> None:
         cleaning_thresholds=cleaning_thresholds,
         cleaning_audit=cleaning_audit,
         histogram_bins=args.histogram_bins,
+        inequality_ncols=args.plot_columns,
+        gini_references=gini_references,
     )
     print(
         f"Materialized {len(trusted_files)} trusted annual files, processed {len(results.years)} survey years, "

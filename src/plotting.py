@@ -12,6 +12,7 @@ import pandas as pd
 from analysis import inequality_statistics, lorenz_curve
 
 DEFAULT_NCOLS = 4
+DEFAULT_INEQUALITY_NCOLS = 3
 DEFAULT_MAX_PANELS = 24
 
 
@@ -118,16 +119,96 @@ def plot_extended_inequality_evolution(summary, value_col="income", years=None, 
     return fig
 
 
+def _annual_line_with_gaps(ax, frame, value_col, *, years, label, **plot_kwargs):
+    """Plot an annual series on a complete year grid so missing years break the line."""
+    series = (
+        frame.assign(year=pd.to_numeric(frame["year"], errors="coerce"))
+        .dropna(subset=["year"])
+        .assign(year=lambda data: data["year"].astype(int))
+        .drop_duplicates("year", keep="last")
+        .set_index("year")[value_col]
+    )
+    values = pd.to_numeric(series, errors="coerce").reindex(years)
+    return ax.plot(years, values, label=label, **plot_kwargs)[0]
+
+
 def plot_gini_validation(summary, references, value_col="income", figsize=(10, 5.5)):
     column = f"{value_col}_gini"
+    required_summary = {"year", column}
+    required_references = {"year", "gini", "source"}
+    if missing := required_summary.difference(summary.columns):
+        raise KeyError("Summary is missing: " + ", ".join(sorted(missing)))
+    if missing := required_references.difference(references.columns):
+        raise KeyError("References are missing: " + ", ".join(sorted(missing)))
+
+    available_years = pd.concat(
+        [pd.to_numeric(summary["year"], errors="coerce"), pd.to_numeric(references["year"], errors="coerce")],
+        ignore_index=True,
+    ).dropna()
+    if available_years.empty:
+        raise ValueError("No annual Gini observations are available.")
+    full_years = np.arange(int(available_years.min()), int(available_years.max()) + 1)
+
     fig, ax = plt.subplots(figsize=figsize)
-    frame = summary[["year", column]].dropna().sort_values("year")
-    ax.plot(frame["year"], frame[column], marker="o", markersize=3, label="Calculated PNAD")
+    _annual_line_with_gaps(
+        ax,
+        summary[["year", column]],
+        column,
+        years=full_years,
+        label="PNAD (calculated)",
+        marker="o",
+        markersize=3,
+    )
     for source, group in references.groupby("source", sort=True):
-        ax.plot(group["year"], group["gini"], marker="o", markersize=3, label=str(source))
+        _annual_line_with_gaps(
+            ax,
+            group[["year", "gini"]],
+            "gini",
+            years=full_years,
+            label=str(source),
+            marker="o",
+            markersize=3,
+        )
     ax.set(xlabel="Year", ylabel="Gini coefficient", title="Gini validation against external references")
     ax.grid(True, alpha=0.3)
     ax.legend()
+    fig.tight_layout()
+    return fig
+
+
+def plot_income_group_totals(group_totals, value_col="income", figsize=(12, 6)):
+    """Plot non-normalized annual aggregate income split across p80/p99/p100."""
+    required = {"year", "p80", "p99", "p100", "total"}
+    if missing := required.difference(group_totals.columns):
+        raise KeyError("Income-group totals are missing: " + ", ".join(sorted(missing)))
+
+    frame = group_totals.sort_values("year")
+    years = pd.to_numeric(frame["year"], errors="raise").astype(int).to_numpy()
+    bottom = np.zeros(len(frame), dtype=float)
+    fig, ax = plt.subplots(figsize=figsize)
+    groups = (
+        ("p80", "Bottom 80% (p80)", "#4C78A8"),
+        ("p99", "Next 19% (p99)", "#F2CF5B"),
+        ("p100", "Top 1% (p100)", "#E45756"),
+    )
+    for column, label, color in groups:
+        values = pd.to_numeric(frame[column], errors="coerce").to_numpy(float)
+        ax.bar(years, values, bottom=bottom, width=0.8, label=label, color=color)
+        bottom += np.nan_to_num(values, nan=0.0)
+
+    ylabel = (
+        "Sum of income across records (2025 USD)"
+        if value_col == "income_adj"
+        else f"Sum of {_measure_label(value_col).lower()} across records"
+    )
+    ax.set(
+        xlabel="Year",
+        ylabel=ylabel,
+        title="Annual income total across records by population group",
+    )
+    ax.grid(axis="y", alpha=0.25)
+    ax.legend(frameon=False, ncol=3)
+    ax.ticklabel_format(axis="y", style="sci", scilimits=(0, 0))
     fig.tight_layout()
     return fig
 
@@ -351,7 +432,7 @@ def plot_lorenz_grid(
     value_col="income",
     years=None,
     nrows=None,
-    ncols=None,
+    ncols=DEFAULT_INEQUALITY_NCOLS,
     max_panels=DEFAULT_MAX_PANELS,
     panel_size=(3.6, 3.3),
     annotate=False,
