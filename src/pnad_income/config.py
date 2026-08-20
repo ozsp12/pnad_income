@@ -8,7 +8,7 @@ import pandas as pd
 
 PACKAGE_ROOT = Path(__file__).resolve().parent
 REPOSITORY_ROOT = PACKAGE_ROOT.parents[1]
-DEFAULT_METADATA_PATH = REPOSITORY_ROOT / "config" / "pnad_metadata.csv"
+DEFAULT_METADATA_PATH = REPOSITORY_ROOT / "metadata" / "pnad_metadata.csv"
 
 
 def load_metadata(path: str | Path | None = None) -> pd.DataFrame:
@@ -17,19 +17,28 @@ def load_metadata(path: str | Path | None = None) -> pd.DataFrame:
     df = pd.read_csv(metadata_path)
 
     numeric_columns = [
-        "income_start", "income_width", "household_size_start",
-        "household_size_width", "effective_income_start",
-        "effective_income_width", "missing_income_code", "exchange",
-        "price_index", "inflation_to_2025",
+        "income_start",
+        "income_width",
+        "household_size_start",
+        "household_size_width",
+        "effective_income_start",
+        "effective_income_width",
+        "missing_income_code",
+        "exchange",
+        "price_index",
+        "inflation_to_2025",
     ]
     for column in numeric_columns:
         df[column] = pd.to_numeric(df[column], errors="coerce")
 
-    # Parse Boolean CSV values explicitly; bool("False") would incorrectly be True.
     for column in ("available", "divide_by_household_size"):
         df[column] = (
-            df[column].astype(str).str.strip().str.lower()
-            .map({"true": True, "false": False}).astype("boolean")
+            df[column]
+            .astype(str)
+            .str.strip()
+            .str.lower()
+            .map({"true": True, "false": False})
+            .astype("boolean")
         )
 
     df["year"] = pd.to_numeric(df["year"], errors="raise").astype(int)
