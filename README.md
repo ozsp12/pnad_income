@@ -61,15 +61,13 @@ The longitudinal series combines IBGE household microdata with exchange-rate and
 
 # Outputs and auditability
 
-Generated products use a shallow structure under [`outputs/figures/`](outputs/figures/) and [`outputs/tables/`](outputs/tables/). Filename prefixes encode analytical purpose: `eda_` documents diagnostics for the `refined → trusted` transformation, while `paper_` contains scientific outputs computed only from trusted data.
+Generated products use a shallow structure under [`outputs/figures/`](outputs/figures/) and [`outputs/tables/`](outputs/tables/). The analytical role is encoded directly in each filename: artifacts beginning with `eda_` document diagnostics for the `refined → trusted` transformation, while artifacts beginning with `paper_` contain scientific outputs computed only from trusted data.
 
-| Location | Prefix | Purpose | Representative artifacts |
-|---|---|---|---|
-| [`outputs/figures/`](outputs/figures/) | `eda_` | Histograms, boxplots, upper-tail diagnostics, and refined-versus-trusted visual comparisons. | `eda_refined_histogram_income_page_01.png`, `eda_trusted_boxplot_income_page_01.png`, `eda_compare_outlier_income_upper_tail_refined_trusted.png` |
-| [`outputs/tables/`](outputs/tables/) | `eda_` | Cleaning diagnostics, thresholds, frequencies, and descriptive statistics. | `eda_cleaning_audit.csv`, `eda_cleaning_thresholds.csv`, `eda_refined_descriptive_statistics.csv` |
-| [`outputs/figures/`](outputs/figures/) | `paper_` | Distributional and inequality figures computed from trusted data. | `paper_ccdf_income_gompertz_page_01.png`, `paper_inequality_gini_all_years.png` |
-| [`outputs/tables/`](outputs/tables/) | `paper_` | Scientific summary, CCDF, and inequality tables computed from trusted data. | `paper_annual_summary.csv`, `paper_annual_inequality_indices.csv`, `paper_ccdf_income_nominal_adjusted.parquet` |
-| [`outputs/manifest.csv`](outputs/manifest.csv) | — | Inventory of generated analysis artifacts. | Complete output manifest. |
+| Location | Purpose | Representative artifacts |
+|---|---|---|
+| [`outputs/figures/`](outputs/figures/) | EDA histograms, boxplots, upper-tail diagnostics, refined-versus-trusted comparisons, and scientific distributional or inequality figures. | `eda_refined_histogram_income_page_01.png`, `eda_trusted_boxplot_income_page_01.png`, `eda_compare_outlier_income_upper_tail_refined_trusted.png`, `paper_ccdf_income_gompertz_page_01.png`, `paper_inequality_gini_all_years.png` |
+| [`outputs/tables/`](outputs/tables/) | Cleaning diagnostics, thresholds, frequencies, descriptive statistics, and scientific summary, CCDF, and inequality tables. | `eda_cleaning_audit.csv`, `eda_cleaning_thresholds.csv`, `eda_refined_descriptive_statistics.csv`, `paper_annual_summary.csv`, `paper_annual_inequality_indices.csv`, `paper_ccdf_income_nominal_adjusted.parquet` |
+| [`outputs/manifest.csv`](outputs/manifest.csv) | Inventory of generated analysis artifacts. | Complete output manifest. |
 
 # Reproducibility
 
@@ -78,4 +76,4 @@ Install the project in editable mode with `pip install -e '.[dev]'`. Running `pn
 # Author
 
 **Osvaldo L. Santos-Pereira**  
-[Academic webpage](https://ozsp12.github.io/) · [ORCID](https://orcid.org/0000-0003-2231-517X) · [GitHub](https://github.com/ozsp12)
+[Academic webpage](https://ozsp12.github.io/) · [Lattes](http://lattes.cnpq.br/6730251976463283) · [ORCID](https://orcid.org/0000-0003-2231-517X) · [Google Scholar](https://scholar.google.com/citations?user=HIZp0X8AAAAJ&hl=en) · [ResearchGate](https://www.researchgate.net/profile/Osvaldo-Santos-Pereira) · [GitHub](https://github.com/ozsp12)
