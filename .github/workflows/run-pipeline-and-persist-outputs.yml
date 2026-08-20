@@ -7,6 +7,7 @@ on:
     branches: [main]
     paths-ignore:
       - 'outputs/**'
+      - 'data/trusted/**'
 
 permissions:
   contents: write
@@ -40,85 +41,119 @@ jobs:
       - name: Run tests
         run: pytest -q
 
-      - name: Prepare clean output directories
-        if: github.event_name != 'pull_request'
+      - name: Select generated-data roots
         run: |
-          rm -rf outputs/figures outputs/tables outputs/reports outputs/manifest.csv
-          mkdir -p outputs/figures outputs/tables
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "TRUSTED_ROOT=/tmp/pnad-trusted" >> "$GITHUB_ENV"
+            echo "OUTPUT_ROOT=/tmp/pnad-outputs" >> "$GITHUB_ENV"
+          else
+            echo "TRUSTED_ROOT=data/trusted" >> "$GITHUB_ENV"
+            echo "OUTPUT_ROOT=outputs" >> "$GITHUB_ENV"
+          fi
 
-      - name: Execute analysis pipeline
-        if: github.event_name != 'pull_request'
+      - name: Prepare clean generated-data roots
+        run: |
+          rm -rf "$OUTPUT_ROOT"
+          mkdir -p "$OUTPUT_ROOT/figures" "$OUTPUT_ROOT/tables"
+          mkdir -p "$TRUSTED_ROOT"
+          rm -f "$TRUSTED_ROOT"/pnad_trusted_*.parquet
+
+      - name: Build trusted data and execute analysis pipeline
         run: |
           pnad-income \
-            --database dados_refined \
-            --output outputs \
+            --refined data/refined \
+            --trusted "$TRUSTED_ROOT" \
+            --metadata data/metadata/pnad_metadata.csv \
+            --output "$OUTPUT_ROOT" \
             --start-year 1976 \
             --end-year 2025 \
             --ccdf-base 1.05 \
-            --histogram-bins 100
+            --histogram-bins 100 \
+            --outlier-method log_mad \
+            --outlier-threshold 6
 
-      - name: Audit output tree
-        if: github.event_name != 'pull_request'
+      - name: Audit trusted data and flat output tree
         run: |
           python - <<'PY'
+          import os
           from pathlib import Path
 
+          output_root = Path(os.environ['OUTPUT_ROOT'])
+          trusted_root = Path(os.environ['TRUSTED_ROOT'])
+
           required = [
-              Path('outputs/manifest.csv'),
-              Path('outputs/tables/paper/pipeline_overview.csv'),
-              Path('outputs/tables/paper/annual_summary.csv'),
-              Path('outputs/tables/paper/annual_inequality_indices.csv'),
-              Path('outputs/tables/paper/ccdf_nominal_adjusted.parquet'),
-              Path('outputs/tables/eda/data_quality_diagnostics.csv'),
-              Path('outputs/tables/eda/descriptive_statistics.csv'),
-              Path('outputs/tables/eda/value_frequencies.csv'),
-              Path('outputs/tables/eda/sentinel_candidates.csv'),
-              Path('outputs/tables/eda/outlier_diagnostics.csv'),
-              Path('outputs/figures/paper/inequality/gini_income_all_years.png'),
-              Path('outputs/figures/paper/inequality/inequality_indices_all_years.png'),
-              Path('outputs/figures/paper/inequality/zanardi_index_all_years.png'),
-              Path('outputs/figures/eda/histograms/histogram_income_log_frequency_page_01.png'),
-              Path('outputs/figures/eda/boxplots/boxplot_income_page_01.png'),
-              Path('outputs/figures/eda/outliers/upper_tail_diagnostics_all_years.png'),
-              Path('outputs/figures/paper/ccdf/ccdf_income_loglog_page_01.png'),
-              Path('outputs/figures/paper/ccdf/ccdf_income_gompertz_page_01.png'),
+              output_root / 'manifest.csv',
+              output_root / 'tables/eda_cleaning_audit.csv',
+              output_root / 'tables/eda_cleaning_thresholds.csv',
+              output_root / 'tables/eda_refined_descriptive_statistics.csv',
+              output_root / 'tables/eda_trusted_descriptive_statistics.csv',
+              output_root / 'tables/paper_pipeline_overview.csv',
+              output_root / 'tables/paper_annual_summary.csv',
+              output_root / 'tables/paper_annual_inequality_indices.csv',
+              output_root / 'tables/paper_ccdf_income_nominal_adjusted.parquet',
+              output_root / 'figures/eda_refined_histogram_income_page_01.png',
+              output_root / 'figures/eda_trusted_histogram_income_page_01.png',
+              output_root / 'figures/eda_refined_boxplot_income_page_01.png',
+              output_root / 'figures/eda_trusted_boxplot_income_page_01.png',
+              output_root / 'figures/eda_refined_outlier_income_upper_tail_all_years.png',
+              output_root / 'figures/eda_trusted_outlier_income_upper_tail_all_years.png',
+              output_root / 'figures/eda_compare_outlier_income_upper_tail_refined_trusted.png',
+              output_root / 'figures/paper_ccdf_income_loglog_page_01.png',
+              output_root / 'figures/paper_ccdf_income_gompertz_page_01.png',
+              output_root / 'figures/paper_inequality_gini_all_years.png',
           ]
           missing = [str(path) for path in required if not path.exists()]
-          figures = list(Path('outputs/figures').rglob('*.png'))
-          forbidden = [
-              Path('outputs/reports'),
-              *Path('outputs/figures').rglob('*_linear*.png'),
-              *Path('outputs/figures').rglob('*double_log_legacy*.png'),
+          figures = list((output_root / 'figures').glob('*.png'))
+          nested_output_dirs = [
+              str(path)
+              for root in (output_root / 'figures', output_root / 'tables')
+              for path in root.iterdir()
+              if path.is_dir()
           ]
-          forbidden_existing = [str(path) for path in forbidden if path.exists()]
+          trusted_files = sorted(trusted_root.glob('pnad_trusted_*.parquet'))
+          wrong_names = [
+              path.name
+              for path in [*(output_root / 'figures').glob('*'), *(output_root / 'tables').glob('*')]
+              if path.is_file() and not path.name.startswith(('eda_', 'paper_'))
+          ]
+
+          print('TRUSTED_FILE_COUNT', len(trusted_files))
           print('FIGURE_COUNT', len(figures))
           print('MISSING_REQUIRED', missing)
-          print('FORBIDDEN_OUTPUTS', forbidden_existing)
+          print('NESTED_OUTPUT_DIRS', nested_output_dirs)
+          print('UNPREFIXED_OUTPUTS', wrong_names)
+
+          if len(trusted_files) != 45:
+              raise SystemExit(f'Expected 45 trusted annual Parquet files, found {len(trusted_files)}')
           if missing:
               raise SystemExit(1)
-          if forbidden_existing:
+          if nested_output_dirs:
+              raise SystemExit(1)
+          if wrong_names:
               raise SystemExit(1)
           if len(figures) < 20:
               raise SystemExit(f'Expected at least 20 figures, found {len(figures)}')
           PY
 
-      - name: Upload outputs as workflow artifact
+      - name: Upload generated outputs
         if: github.event_name != 'pull_request'
         uses: actions/upload-artifact@v4
         with:
-          name: pnad-complete-outputs
-          path: outputs/
+          name: pnad-trusted-data-and-outputs
+          path: |
+            data/trusted/
+            outputs/
           if-no-files-found: error
 
-      - name: Commit generated outputs to main
+      - name: Commit trusted data and generated outputs to main
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add -f outputs/manifest.csv outputs/figures outputs/tables
+          git add -f data/trusted outputs/manifest.csv outputs/figures outputs/tables
           if git diff --cached --quiet; then
-            echo 'No generated output changes to commit.'
+            echo 'No generated trusted-data or output changes to commit.'
             exit 0
           fi
-          git commit -m 'update generated PNAD outputs [skip ci]'
+          git commit -m 'update trusted PNAD data and generated outputs [skip ci]'
           git push origin HEAD:main

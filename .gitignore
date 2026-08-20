@@ -10,11 +10,13 @@ venv/
 # Jupyter
 .ipynb_checkpoints/
 
-# Generated outputs
+# Raw source data are local; keep only the layer placeholder
+data/raw/*
+!data/raw/.gitkeep
+
+# Generated analysis products
 outputs/figures/*
 outputs/tables/*
-outputs/reports/*
-!outputs/README.md
 
 # Local configuration
 .env

@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Iterable
 
 import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
 
 from analysis import annual_inequality_indices, compare_gini_series, gini_validation_statistics
@@ -36,47 +37,20 @@ from plotting import (
 
 @dataclass(frozen=True)
 class OutputPaths:
-    """Canonical output tree separating exploratory diagnostics from paper results."""
+    """Flat output tree; analytical hierarchy is encoded in filename prefixes."""
 
     root: Path
     figures: Path
     tables: Path
-    figures_eda: Path
-    figures_paper: Path
-    eda_histograms: Path
-    eda_boxplots: Path
-    eda_outliers: Path
-    paper_ccdf: Path
-    paper_lorenz: Path
-    paper_inequality: Path
-    tables_eda: Path
-    tables_paper: Path
 
 
 def prepare_output_paths(output_root: str | Path) -> OutputPaths:
     root = Path(output_root).expanduser().resolve()
     figures = root / "figures"
     tables = root / "tables"
-    figures_eda = figures / "eda"
-    figures_paper = figures / "paper"
-    paths = OutputPaths(
-        root=root,
-        figures=figures,
-        tables=tables,
-        figures_eda=figures_eda,
-        figures_paper=figures_paper,
-        eda_histograms=figures_eda / "histograms",
-        eda_boxplots=figures_eda / "boxplots",
-        eda_outliers=figures_eda / "outliers",
-        paper_ccdf=figures_paper / "ccdf",
-        paper_lorenz=figures_paper / "lorenz",
-        paper_inequality=figures_paper / "inequality",
-        tables_eda=tables / "eda",
-        tables_paper=tables / "paper",
-    )
-    for directory in paths.__dict__.values():
-        Path(directory).mkdir(parents=True, exist_ok=True)
-    return paths
+    for directory in (root, figures, tables):
+        directory.mkdir(parents=True, exist_ok=True)
+    return OutputPaths(root=root, figures=figures, tables=tables)
 
 
 def build_diagnostics(results: PipelineResults) -> pd.DataFrame:
@@ -139,10 +113,30 @@ def _save_pages(figures, directory: Path, stem: str, dpi: int) -> list[Path]:
     ]
 
 
+def _shared_positive_ylim(*frames: pd.DataFrame) -> tuple[float, float] | None:
+    positives = []
+    for frame in frames:
+        if "income" not in frame.columns:
+            continue
+        values = pd.to_numeric(frame["income"], errors="coerce")
+        values = values[np.isfinite(values) & (values > 0)]
+        if not values.empty:
+            positives.append(values)
+    if not positives:
+        return None
+    merged = pd.concat(positives, ignore_index=True)
+    lower = max(float(merged.min()) * 0.8, np.finfo(float).tiny)
+    upper = float(merged.max()) * 1.2
+    return lower, upper if upper > lower else lower * 10
+
+
 def export_analysis_outputs(
     results: PipelineResults,
     output_root: str | Path = "outputs",
     *,
+    refined_panel: pd.DataFrame | None = None,
+    cleaning_thresholds: pd.DataFrame | None = None,
+    cleaning_audit: pd.DataFrame | None = None,
     selected_year: int | None = None,
     selected_years: Iterable[int] | None = None,
     grid_nrows: int = 2,
@@ -153,78 +147,114 @@ def export_analysis_outputs(
     dpi: int = 200,
     gini_references: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
-    """Persist the complete analysis from one :class:`PipelineResults` object."""
+    """Persist trusted scientific outputs plus refined-versus-trusted EDA diagnostics."""
     paths = prepare_output_paths(output_root)
     manifest: list[dict[str, object]] = []
     indices = annual_inequality_indices(results.panel)
-    eda = DescriptiveStatistics(results.panel)
+    trusted = results.panel.copy()
+    refined = refined_panel.copy() if refined_panel is not None else trusted.copy()
+    if results.years:
+        refined = refined.loc[refined["year"].isin(results.years)].reset_index(drop=True)
 
-    tables = {
-        "pipeline_overview.csv": pipeline_overview(results),
-        "annual_summary.csv": results.summary,
-        "annual_inequality_indices.csv": indices,
-        "ccdf_nominal_adjusted.parquet": results.ccdf_nominal_adjusted,
-        "data_quality_diagnostics.csv": build_diagnostics(results),
-        "descriptive_statistics.csv": eda.annual_summary(),
-        "value_frequencies.csv": eda.value_frequencies(),
-        "sentinel_candidates.csv": eda.sentinel_candidates(),
-        "outlier_diagnostics.csv": eda.outlier_diagnostics(),
+    eda_refined = DescriptiveStatistics(refined)
+    eda_trusted = DescriptiveStatistics(trusted)
+
+    tables: dict[str, pd.DataFrame] = {
+        "eda_refined_descriptive_statistics.csv": eda_refined.annual_summary(),
+        "eda_trusted_descriptive_statistics.csv": eda_trusted.annual_summary(),
+        "eda_refined_value_frequencies.csv": eda_refined.value_frequencies(),
+        "eda_trusted_value_frequencies.csv": eda_trusted.value_frequencies(),
+        "eda_refined_metadata_sentinel_occurrences.csv": eda_refined.metadata_sentinel_occurrences(),
+        "eda_refined_outlier_diagnostics.csv": eda_refined.outlier_diagnostics(),
+        "eda_trusted_outlier_diagnostics.csv": eda_trusted.outlier_diagnostics(),
+        "eda_trusted_data_quality_diagnostics.csv": build_diagnostics(results),
+        "eda_cleaning_thresholds.csv": cleaning_thresholds if cleaning_thresholds is not None else pd.DataFrame(),
+        "eda_cleaning_audit.csv": cleaning_audit if cleaning_audit is not None else pd.DataFrame(),
+        "paper_pipeline_overview.csv": pipeline_overview(results),
+        "paper_annual_summary.csv": results.summary,
+        "paper_annual_inequality_indices.csv": indices,
+        "paper_ccdf_income_nominal_adjusted.parquet": results.ccdf_nominal_adjusted,
     }
     if not results.ccdf_habitual_effective.empty:
-        tables["ccdf_habitual_effective.parquet"] = results.ccdf_habitual_effective
+        tables["paper_ccdf_income_habitual_effective.parquet"] = results.ccdf_habitual_effective
 
     if gini_references is not None and not gini_references.empty:
         comparison = compare_gini_series(results.summary, gini_references)
         tables.update(
             {
-                "gini_external_references.csv": gini_references,
-                "gini_external_comparison.csv": comparison,
-                "gini_external_validation_statistics.csv": gini_validation_statistics(comparison),
+                "paper_gini_external_references.csv": gini_references,
+                "paper_gini_external_comparison.csv": comparison,
+                "paper_gini_external_validation_statistics.csv": gini_validation_statistics(comparison),
             }
         )
 
-    eda_table_names = {
-        "data_quality_diagnostics.csv",
-        "descriptive_statistics.csv",
-        "value_frequencies.csv",
-        "sentinel_candidates.csv",
-        "outlier_diagnostics.csv",
-    }
-    saved_tables = []
-    for name, frame in tables.items():
-        directory = paths.tables_eda if name in eda_table_names else paths.tables_paper
-        saved_tables.append(save_table(frame, directory / name))
+    saved_tables = [save_table(frame, paths.tables / name) for name, frame in tables.items()]
     manifest.extend(_rows(saved_tables, "table"))
 
     scalar_figures = {
-        "gini_income_all_years.png": plot_gini_evolution(results.summary),
-        "top_income_shares_all_years.png": plot_top_income_shares(results.summary),
-        "extended_inequality_pietra_k_z_all_years.png": plot_extended_inequality_evolution(results.summary),
-        "inequality_indices_all_years.png": plot_primary_indices(indices),
-        "zanardi_index_all_years.png": plot_zanardi(indices),
-        "information_indices_all_years.png": plot_information_indices(indices),
-        "gini_pietra_kolkata_relations.png": plot_kolkata_pietra_relationships(indices),
-        "pietra_kolkata_bound_all_years.png": plot_pietra_kolkata_bound(indices),
-        "gini_zanardi_phase.png": plot_gini_zanardi(indices),
+        "paper_inequality_gini_all_years.png": plot_gini_evolution(results.summary),
+        "paper_inequality_top_income_shares_all_years.png": plot_top_income_shares(results.summary),
+        "paper_inequality_extended_pietra_k_z_all_years.png": plot_extended_inequality_evolution(results.summary),
+        "paper_inequality_indices_all_years.png": plot_primary_indices(indices),
+        "paper_inequality_zanardi_all_years.png": plot_zanardi(indices),
+        "paper_inequality_information_all_years.png": plot_information_indices(indices),
+        "paper_inequality_gini_pietra_kolkata_relations.png": plot_kolkata_pietra_relationships(indices),
+        "paper_inequality_pietra_kolkata_bound_all_years.png": plot_pietra_kolkata_bound(indices),
+        "paper_inequality_gini_zanardi_phase.png": plot_gini_zanardi(indices),
     }
     if gini_references is not None and not gini_references.empty:
-        scalar_figures["gini_external_validation.png"] = plot_gini_validation(results.summary, gini_references)
-
-    saved_figures = [
-        save_figure(figure, paths.paper_inequality / name, dpi=dpi)
-        for name, figure in scalar_figures.items()
-    ]
+        scalar_figures["paper_gini_external_validation.png"] = plot_gini_validation(results.summary, gini_references)
+    saved_figures = [save_figure(fig, paths.figures / name, dpi=dpi) for name, fig in scalar_figures.items()]
     manifest.extend(_rows(saved_figures, "figure"))
+
+    hist_limits = eda_refined.income_limits_by_year()
+    box_limits = eda_refined.positive_limits_by_year()
+    max_panels = complete_nrows * complete_ncols
+    eda_page_specs = [
+        (
+            "eda_refined_histogram_income",
+            eda_refined.histogram_pages(
+                bins=histogram_bins,
+                max_panels=max_panels,
+                ncols=complete_ncols,
+                x_limits_by_year=hist_limits,
+            ),
+        ),
+        (
+            "eda_trusted_histogram_income",
+            eda_trusted.histogram_pages(
+                bins=histogram_bins,
+                max_panels=max_panels,
+                ncols=complete_ncols,
+                x_limits_by_year=hist_limits,
+            ),
+        ),
+        (
+            "eda_refined_boxplot_income",
+            eda_refined.boxplot_pages(max_panels=max_panels, ncols=complete_ncols, y_limits_by_year=box_limits),
+        ),
+        (
+            "eda_trusted_boxplot_income",
+            eda_trusted.boxplot_pages(max_panels=max_panels, ncols=complete_ncols, y_limits_by_year=box_limits),
+        ),
+    ]
+    for stem, figures in eda_page_specs:
+        manifest.extend(_rows(_save_pages(figures, paths.figures, stem, dpi), "figure"))
+
+    shared_ylim = _shared_positive_ylim(refined, trusted)
+    eda_scalar = {
+        "eda_refined_outlier_income_upper_tail_all_years.png": eda_refined.outlier_overview_figure(ylim=shared_ylim),
+        "eda_trusted_outlier_income_upper_tail_all_years.png": eda_trusted.outlier_overview_figure(ylim=shared_ylim),
+        "eda_compare_outlier_income_upper_tail_refined_trusted.png": eda_refined.compare_upper_tail_figure(eda_trusted),
+    }
+    saved_eda_scalar = [save_figure(fig, paths.figures / name, dpi=dpi) for name, fig in eda_scalar.items()]
+    manifest.extend(_rows(saved_eda_scalar, "figure"))
 
     years = results.years
     ccdf = results.ccdf_nominal_adjusted
-    page_specs = [
+    paper_page_specs = [
         (
-            "histogram_income_log_frequency",
-            eda.histogram_pages(bins=histogram_bins, max_panels=complete_nrows * complete_ncols, ncols=complete_ncols),
-        ),
-        (
-            "ccdf_income_loglog",
+            "paper_ccdf_income_loglog",
             plot_ccdf_grid(
                 ccdf,
                 measure="income",
@@ -235,7 +265,7 @@ def export_analysis_outputs(
             ),
         ),
         (
-            "ccdf_income_gompertz",
+            "paper_ccdf_income_gompertz",
             plot_ccdf_grid(
                 ccdf,
                 measure="income",
@@ -246,11 +276,11 @@ def export_analysis_outputs(
             ),
         ),
         (
-            "lorenz_income",
+            "paper_lorenz_income",
             plot_lorenz_grid(results.panel, years=years, nrows=complete_nrows, ncols=complete_ncols),
         ),
         (
-            "lorenz_income_annotated_g_p_k_z",
+            "paper_lorenz_income_annotated_g_p_k_z",
             plot_lorenz_grid(
                 results.panel,
                 years=years,
@@ -260,7 +290,7 @@ def export_analysis_outputs(
             ),
         ),
         (
-            "ccdf_nominal_vs_adjusted_loglog",
+            "paper_ccdf_income_nominal_vs_adjusted_loglog",
             plot_measure_comparison_grid(
                 ccdf,
                 years=years,
@@ -270,49 +300,32 @@ def export_analysis_outputs(
             ),
         ),
     ]
-    for stem, figures in page_specs:
-        if stem.startswith("histogram"):
-            directory = paths.eda_histograms
-        elif stem.startswith("ccdf"):
-            directory = paths.paper_ccdf
-        else:
-            directory = paths.paper_lorenz
-        manifest.extend(_rows(_save_pages(figures, directory, stem, dpi), "figure"))
-
-    manifest.extend(_rows(_save_pages(eda.boxplot_pages(max_panels=complete_nrows * complete_ncols, ncols=complete_ncols), paths.eda_boxplots, "boxplot_income", dpi), "figure"))
-    manifest.extend(_rows([save_figure(eda.outlier_overview_figure(), paths.eda_outliers / "upper_tail_diagnostics_all_years.png", dpi=dpi)], "figure"))
+    for stem, figures in paper_page_specs:
+        manifest.extend(_rows(_save_pages(figures, paths.figures, stem, dpi), "figure"))
 
     if selected_year is not None:
         year = int(selected_year)
         individual = {
-            f"histogram_income_{year}_log_frequency.png": plot_histogram(
+            f"eda_trusted_histogram_income_{year}.png": plot_histogram(
                 results.panel,
                 year,
                 bins=histogram_bins,
                 yscale="log",
             ),
-            f"ccdf_income_{year}_loglog.png": plot_ccdf(ccdf, year, transform="loglog"),
-            f"ccdf_income_{year}_gompertz.png": plot_ccdf(ccdf, year, transform="gompertz"),
-            f"lorenz_income_{year}.png": plot_lorenz_curve(results.panel, year),
-            f"lorenz_income_{year}_annotated_g_p_k_z.png": plot_lorenz_curve(results.panel, year, annotate=True),
-            f"ccdf_nominal_vs_adjusted_{year}_loglog.png": plot_measure_comparison(ccdf, year),
+            f"paper_ccdf_income_{year}_loglog.png": plot_ccdf(ccdf, year, transform="loglog"),
+            f"paper_ccdf_income_{year}_gompertz.png": plot_ccdf(ccdf, year, transform="gompertz"),
+            f"paper_lorenz_income_{year}.png": plot_lorenz_curve(results.panel, year),
+            f"paper_lorenz_income_{year}_annotated_g_p_k_z.png": plot_lorenz_curve(results.panel, year, annotate=True),
+            f"paper_ccdf_income_nominal_vs_adjusted_{year}_loglog.png": plot_measure_comparison(ccdf, year),
         }
-        paths_saved = []
-        for name, fig in individual.items():
-            if name.startswith("histogram"):
-                directory = paths.eda_histograms
-            elif name.startswith("ccdf"):
-                directory = paths.paper_ccdf
-            else:
-                directory = paths.paper_lorenz
-            paths_saved.append(save_figure(fig, directory / name, dpi=dpi))
+        paths_saved = [save_figure(fig, paths.figures / name, dpi=dpi) for name, fig in individual.items()]
         manifest.extend(_rows(paths_saved, "figure"))
 
     if selected_years is not None:
         selected = [int(year) for year in selected_years]
         selected_specs = [
             (
-                "selected_histogram_income_log_frequency",
+                "eda_trusted_selected_histogram_income",
                 plot_histogram_grid(
                     results.panel,
                     years=selected,
@@ -323,7 +336,7 @@ def export_analysis_outputs(
                 ),
             ),
             (
-                "selected_ccdf_income_loglog",
+                "paper_selected_ccdf_income_loglog",
                 plot_ccdf_grid(
                     ccdf,
                     measure="income",
@@ -334,7 +347,7 @@ def export_analysis_outputs(
                 ),
             ),
             (
-                "selected_ccdf_income_gompertz",
+                "paper_selected_ccdf_income_gompertz",
                 plot_ccdf_grid(
                     ccdf,
                     measure="income",
@@ -345,28 +358,12 @@ def export_analysis_outputs(
                 ),
             ),
             (
-                "selected_lorenz_income",
+                "paper_selected_lorenz_income",
                 plot_lorenz_grid(results.panel, years=selected, nrows=grid_nrows, ncols=grid_ncols),
-            ),
-            (
-                "selected_lorenz_income_annotated_g_p_k_z",
-                plot_lorenz_grid(
-                    results.panel,
-                    years=selected,
-                    nrows=grid_nrows,
-                    ncols=grid_ncols,
-                    annotate=True,
-                ),
             ),
         ]
         for stem, figures in selected_specs:
-            if stem.startswith("selected_histogram"):
-                directory = paths.eda_histograms
-            elif stem.startswith("selected_ccdf"):
-                directory = paths.paper_ccdf
-            else:
-                directory = paths.paper_lorenz
-            manifest.extend(_rows(_save_pages(figures, directory, stem, dpi), "figure"))
+            manifest.extend(_rows(_save_pages(figures, paths.figures, stem, dpi), "figure"))
 
     manifest_frame = pd.DataFrame(manifest)
     manifest_path = save_table(manifest_frame, paths.root / "manifest.csv")
