@@ -51,9 +51,6 @@ jobs:
             --output ../outputs/reports/pnad_income_pipeline_executed.ipynb \
             --ExecutePreprocessor.timeout=1800
 
-      - name: Export advanced inequality indices
-        run: python scripts/export_advanced_inequality.py
-
       - name: Render executed notebook to HTML
         run: |
           jupyter nbconvert \
@@ -74,6 +71,7 @@ jobs:
               Path('outputs/tables/annual_inequality_indices.csv'),
               Path('outputs/tables/ccdf_nominal_adjusted.parquet'),
               Path('outputs/tables/data_quality_diagnostics.csv'),
+              Path('outputs/figures/gini_income_all_years.png'),
               Path('outputs/figures/inequality_indices_all_years.png'),
               Path('outputs/figures/zanardi_index_all_years.png'),
               Path('outputs/reports/pnad_income_pipeline_executed.ipynb'),
@@ -85,8 +83,8 @@ jobs:
           print('MISSING_REQUIRED', missing)
           if missing:
               raise SystemExit(1)
-          if len(figures) < 26:
-              raise SystemExit(f'Expected at least 26 figures, found {len(figures)}')
+          if len(figures) < 25:
+              raise SystemExit(f'Expected at least 25 figures, found {len(figures)}')
           PY
 
       - name: Upload outputs as workflow artifact
