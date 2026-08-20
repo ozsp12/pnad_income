@@ -97,8 +97,12 @@ def zanardi_components(values) -> dict[str, float]:
         return {key: np.nan for key in ("kolkata", "qd", "gini_poor", "gini_rich", "delta_gini", "zanardi")}
     if np.all(x == 0):
         return {
-            "kolkata": 0.5, "qd": 0.5, "gini_poor": 0.0,
-            "gini_rich": 0.0, "delta_gini": 0.0, "zanardi": 0.0,
+            "kolkata": 0.5,
+            "qd": 0.5,
+            "gini_poor": 0.0,
+            "gini_rich": 0.0,
+            "delta_gini": 0.0,
+            "zanardi": 0.0,
         }
 
     G = gini(x)
@@ -284,20 +288,22 @@ def summary_statistics(
             valid = series[np.isfinite(series) & (series >= 0)]
             positive = valid[valid > 0]
             metrics = inequality_statistics(valid, atkinson_epsilon)
-            row.update({
-                f"{column}_n": int(valid.size),
-                f"{column}_n_missing": int(series.isna().sum()),
-                f"{column}_n_zero": int((valid == 0).sum()),
-                f"{column}_n_positive": int((valid > 0).sum()),
-                f"{column}_zero_fraction": float((valid == 0).mean()) if valid.size else np.nan,
-                f"{column}_missing_fraction": float(series.isna().mean()) if len(series) else np.nan,
-                f"{column}_sum": valid.sum() if valid.size else np.nan,
-                f"{column}_xmin": positive.min() if not positive.empty else np.nan,
-                f"{column}_xmax": valid.max() if not valid.empty else np.nan,
-                f"{column}_mean": valid.mean(),
-                f"{column}_median": valid.median(),
-                f"{column}_std": valid.std(),
-            })
+            row.update(
+                {
+                    f"{column}_n": int(valid.size),
+                    f"{column}_n_missing": int(series.isna().sum()),
+                    f"{column}_n_zero": int((valid == 0).sum()),
+                    f"{column}_n_positive": int((valid > 0).sum()),
+                    f"{column}_zero_fraction": float((valid == 0).mean()) if valid.size else np.nan,
+                    f"{column}_missing_fraction": float(series.isna().mean()) if len(series) else np.nan,
+                    f"{column}_sum": valid.sum() if valid.size else np.nan,
+                    f"{column}_xmin": positive.min() if not positive.empty else np.nan,
+                    f"{column}_xmax": valid.max() if not valid.empty else np.nan,
+                    f"{column}_mean": valid.mean(),
+                    f"{column}_median": valid.median(),
+                    f"{column}_std": valid.std(),
+                }
+            )
             row.update({f"{column}_{name}": value for name, value in metrics.items()})
         rows.append(row)
     return pd.DataFrame(rows).sort_values(year_col).reset_index(drop=True)
@@ -323,8 +329,13 @@ def annual_inequality_indices(
     return pd.DataFrame(rows).sort_values("year").reset_index(drop=True)
 
 
-def geometric_edges(values, base: float = 1.05, xmin: float | None = None, xmax: float | None = None) -> np.ndarray:
-    """Build geometric bin edges over the strictly positive support."""
+def geometric_thresholds(
+    values,
+    base: float = 1.05,
+    xmin: float | None = None,
+    xmax: float | None = None,
+) -> np.ndarray:
+    """Return exact geometric CCDF thresholds ``xmin * base**k`` up to ``xmax``."""
     if base <= 1:
         raise ValueError("base must be greater than 1.")
     x = np.asarray(values, dtype=float)
@@ -336,11 +347,30 @@ def geometric_edges(values, base: float = 1.05, xmin: float | None = None, xmax:
     upper = float(x.max() if xmax is None else xmax)
     if lower <= 0 or upper < lower:
         raise ValueError("Require 0 < xmin <= xmax.")
-    if upper == lower:
-        return np.array([lower, np.nextafter(upper, np.inf)])
-    n_edges = int(np.ceil(np.log(upper / lower) / np.log(base))) + 1
-    edges = np.geomspace(lower, upper, num=max(n_edges, 2))
-    return np.unique(np.append(edges, upper) if edges[-1] < upper else edges)
+    if np.isclose(upper, lower):
+        return np.array([lower], dtype=float)
+    n = int(np.floor(np.log(upper / lower) / np.log(base))) + 1
+    thresholds = lower * np.power(base, np.arange(max(n, 1), dtype=float))
+    tolerance = np.finfo(float).eps * max(1.0, abs(upper)) * 16
+    return thresholds[thresholds <= upper + tolerance]
+
+
+def geometric_edges(
+    values,
+    base: float = 1.05,
+    xmin: float | None = None,
+    xmax: float | None = None,
+) -> np.ndarray:
+    """Build interval edges whose left edges are the exact geometric CCDF thresholds."""
+    x = np.asarray(values, dtype=float)
+    x = x[np.isfinite(x)]
+    thresholds = geometric_thresholds(x, base=base, xmin=xmin, xmax=xmax)
+    upper = float(x.max() if xmax is None else xmax)
+    if thresholds[-1] < upper:
+        final_edge = np.nextafter(upper, np.inf)
+    else:
+        final_edge = np.nextafter(thresholds[-1], np.inf)
+    return np.append(thresholds, final_edge)
 
 
 def compute_ccdf(
@@ -348,14 +378,14 @@ def compute_ccdf(
     base: float = 1.05,
     xmin: float | None = None,
     xmax: float | None = None,
-    scale: str = "percent",
+    scale: str = "probability",
 ) -> pd.DataFrame:
-    """Compute an empirical CCDF and geometric-bin descriptive statistics."""
+    """Compute the empirical CCDF on an exact geometric threshold grid."""
     x = np.asarray(values, dtype=float)
     x = x[np.isfinite(x)]
     if x.size == 0:
         raise ValueError("No finite observations were supplied.")
-    edges = geometric_edges(x, base, xmin, xmax)
+    edges = geometric_edges(x, base=base, xmin=xmin, xmax=xmax)
     left, right = edges[:-1], edges[1:]
     total = x.size
 
@@ -381,18 +411,20 @@ def compute_ccdf(
             median[i] = np.median(bin_values)
             std[i] = bin_values.std(ddof=1) if bin_values.size > 1 else 0.0
 
-    return pd.DataFrame({
-        "bin": left,
-        "right_bin": right,
-        "geom_center": np.sqrt(left * right),
-        "count": count,
-        "ccdf": ccdf,
-        "mean_arith": mean,
-        "mean_geom": geom,
-        "median": median,
-        "std": std,
-        "population_n": total,
-    })
+    return pd.DataFrame(
+        {
+            "bin": left,
+            "right_bin": right,
+            "geom_center": np.sqrt(left * right),
+            "count": count,
+            "ccdf": ccdf,
+            "mean_arith": mean,
+            "mean_geom": geom,
+            "median": median,
+            "std": std,
+            "population_n": total,
+        }
+    )
 
 
 def build_ccdf_by_year(
@@ -400,7 +432,7 @@ def build_ccdf_by_year(
     value_col: str = "income",
     year_col: str = "year",
     base: float = 1.05,
-    scale: str = "percent",
+    scale: str = "probability",
 ) -> pd.DataFrame:
     """Compute one CCDF table for each survey year."""
     if {value_col, year_col}.difference(df.columns):
@@ -421,10 +453,14 @@ def compare_income_measures_ccdf(
     measures: tuple[str, ...] = ("income", "income_effective"),
     year_col: str = "year",
     base: float = 1.05,
-    scale: str = "percent",
+    scale: str = "probability",
 ) -> pd.DataFrame:
     """Stack annual CCDFs for all requested available income measures."""
-    tables = [build_ccdf_by_year(df, measure, year_col, base, scale) for measure in measures if measure in df.columns]
+    tables = [
+        build_ccdf_by_year(df, measure, year_col, base, scale)
+        for measure in measures
+        if measure in df.columns
+    ]
     tables = [table for table in tables if not table.empty]
     return pd.concat(tables, ignore_index=True) if tables else pd.DataFrame()
 
@@ -484,12 +520,14 @@ def gini_validation_statistics(comparison: pd.DataFrame) -> pd.DataFrame:
             if diff.size > 1 and np.std(calculated) > 0 and np.std(reference) > 0
             else np.nan
         )
-        rows.append({
-            "source": source,
-            "n": int(diff.size),
-            "mean_difference": float(np.mean(diff)) if diff.size else np.nan,
-            "mae": float(np.mean(np.abs(diff))) if diff.size else np.nan,
-            "rmse": float(np.sqrt(np.mean(diff**2))) if diff.size else np.nan,
-            "correlation": correlation,
-        })
+        rows.append(
+            {
+                "source": source,
+                "n": int(diff.size),
+                "mean_difference": float(np.mean(diff)) if diff.size else np.nan,
+                "mae": float(np.mean(np.abs(diff))) if diff.size else np.nan,
+                "rmse": float(np.sqrt(np.mean(diff**2))) if diff.size else np.nan,
+                "correlation": correlation,
+            }
+        )
     return pd.DataFrame(rows)
