@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from pathlib import Path
 import re
 
@@ -11,7 +10,10 @@ import pandas as pd
 
 PACKAGE_ROOT = Path(__file__).resolve().parent
 REPOSITORY_ROOT = PACKAGE_ROOT.parent
-DEFAULT_METADATA_PATH = REPOSITORY_ROOT / "metadata" / "pnad_metadata.csv"
+DATA_ROOT = REPOSITORY_ROOT / "data"
+DEFAULT_REFINED_PATH = DATA_ROOT / "refined"
+DEFAULT_TRUSTED_PATH = DATA_ROOT / "trusted"
+DEFAULT_METADATA_PATH = DATA_ROOT / "metadata" / "pnad_metadata.csv"
 
 SUPPORTED_FILE_SUFFIXES = {".parquet", ".csv", ".feather", ".pkl", ".pickle", ".xlsx", ".xls"}
 YEAR_PATTERN = re.compile(r"(19|20)\d{2}")
@@ -22,29 +24,37 @@ COLUMN_ALIASES = {
     "renda_efet": "income_effective",
 }
 
-LEGACY_MANUAL_OUTLIER_CUTS: dict[int, float] = {
-    1976: 4_975_956.36618934,
-    1977: 396_446.78499665,
-    1978: 257_615.93691339,
-    1979: 151_364.81112462,
-}
-
 
 def load_metadata(path: str | Path | None = None) -> pd.DataFrame:
     """Load the canonical year-level metadata table."""
     df = pd.read_csv(Path(path) if path is not None else DEFAULT_METADATA_PATH)
     numeric = [
-        "income_start", "income_width", "household_size_start", "household_size_width",
-        "effective_income_start", "effective_income_width", "missing_income_code",
-        "exchange", "price_index", "inflation_to_2025",
+        "income_start",
+        "income_width",
+        "household_size_start",
+        "household_size_width",
+        "effective_income_start",
+        "effective_income_width",
+        "missing_income_code",
+        "exchange",
+        "price_index",
+        "inflation_to_2025",
     ]
     for column in numeric:
-        df[column] = pd.to_numeric(df[column], errors="coerce")
+        if column in df.columns:
+            df[column] = pd.to_numeric(df[column], errors="coerce")
     for column in ("available", "divide_by_household_size"):
-        df[column] = (
-            df[column].astype(str).str.strip().str.lower()
-            .map({"true": True, "false": False}).astype("boolean")
-        )
+        if column in df.columns:
+            df[column] = (
+                df[column]
+                .astype(str)
+                .str.strip()
+                .str.lower()
+                .map({"true": True, "false": False})
+                .astype("boolean")
+            )
+    if "year" not in df.columns:
+        raise KeyError("Metadata must contain a 'year' column.")
     df["year"] = pd.to_numeric(df["year"], errors="raise").astype(int)
     return df.sort_values("year").reset_index(drop=True)
 
@@ -98,8 +108,25 @@ def _year_from_filename(path: Path) -> int:
     return int(match.group(0))
 
 
+def _annual_files(database_path: Path) -> list[Path]:
+    """Return one unambiguous annual data layer from a directory."""
+    trusted = sorted(database_path.glob("pnad_trusted_*.parquet"))
+    refined = sorted(database_path.glob("pnad_refined_*.parquet"))
+    if trusted and refined:
+        raise ValueError(
+            f"Both trusted and refined annual files were found in {database_path}; "
+            "keep each data layer in its own directory."
+        )
+    files = trusted or refined
+    if not files:
+        raise FileNotFoundError(
+            f"No pnad_trusted_*.parquet or pnad_refined_*.parquet files were found in {database_path}."
+        )
+    return files
+
+
 def load_database(path: str | Path) -> pd.DataFrame:
-    """Load one table or a directory of annual refined Parquet files."""
+    """Load one table or a directory containing a single annual PNAD data layer."""
     database_path = Path(path).expanduser().resolve()
     if not database_path.exists():
         raise FileNotFoundError(f"Database not found: {database_path}")
@@ -109,12 +136,8 @@ def load_database(path: str | Path) -> pd.DataFrame:
             raise ValueError(f"Unsupported database format '{database_path.suffix}'.")
         return _normalize_columns(_read_table(database_path))
 
-    files = sorted(database_path.glob("pnad_refined_*.parquet"))
-    if not files:
-        raise FileNotFoundError(f"No pnad_refined_*.parquet files were found in {database_path}.")
-
     frames = []
-    for file in files:
+    for file in _annual_files(database_path):
         frame = _normalize_columns(pd.read_parquet(file))
         year = _year_from_filename(file)
         if "year" not in frame.columns:
@@ -138,8 +161,12 @@ def validate_database(df: pd.DataFrame) -> pd.DataFrame:
         raise ValueError("Column 'year' contains non-numeric or missing values.")
 
     for column in (
-        "income_effective", "income_adj", "income_effective_adj",
-        "exchange", "price_index", "inflation_to_2025",
+        "income_effective",
+        "income_adj",
+        "income_effective_adj",
+        "exchange",
+        "price_index",
+        "inflation_to_2025",
     ):
         if column in out.columns:
             out[column] = pd.to_numeric(out[column], errors="coerce")
@@ -162,15 +189,18 @@ def attach_monetary_metadata(
 
 
 def standardize_income_frame(raw: pd.DataFrame, spec: pd.Series) -> pd.DataFrame:
-    """Convert one raw annual frame to the common analytical schema."""
+    """Convert one raw annual frame to the common refined analytical schema."""
     df = raw.copy()
-    missing_code = float(spec["missing_income_code"]) if pd.notna(spec["missing_income_code"]) else None
+    missing_code = float(spec["missing_income_code"]) if pd.notna(spec.get("missing_income_code")) else None
     df["income_raw"] = pd.to_numeric(df["income_raw"], errors="coerce")
-    # Survey-specific sentinel codes are metadata, not legitimate income observations.
+
+    # Historical refined files were built with declared survey sentinels removed.
+    # The trusted-layer cleaner rechecks the resulting income field so residual
+    # sentinels or externally supplied refined files cannot bypass quality control.
     if missing_code is not None:
         df = df.loc[df["income_raw"] != missing_code].copy()
 
-    if bool(spec["divide_by_household_size"]):
+    if bool(spec.get("divide_by_household_size", False)):
         if "household_size" not in df.columns:
             raise KeyError("household_size is required for this survey year.")
         df["household_size"] = pd.to_numeric(df["household_size"], errors="coerce")
@@ -191,34 +221,6 @@ def standardize_income_frame(raw: pd.DataFrame, spec: pd.Series) -> pd.DataFrame
     return out.reset_index(drop=True)
 
 
-def apply_manual_outlier_cuts(
-    df: pd.DataFrame,
-    enabled: bool = False,
-    cuts: Mapping[int, float] | None = None,
-    *,
-    year_col: str = "year",
-    value_col: str = "income",
-) -> pd.DataFrame:
-    """Optionally reproduce the historical 1976--1979 upper-income cuts."""
-    out = df.copy()
-    if not enabled:
-        return out
-    missing = {year_col, value_col}.difference(out.columns)
-    if missing:
-        raise KeyError("Manual outlier filtering requires: " + ", ".join(sorted(missing)))
-
-    active = LEGACY_MANUAL_OUTLIER_CUTS if cuts is None else dict(cuts)
-    years = pd.to_numeric(out[year_col], errors="coerce")
-    values = pd.to_numeric(out[value_col], errors="coerce")
-    keep = np.ones(len(out), dtype=bool)
-    for year, threshold in active.items():
-        threshold = float(threshold)
-        if not np.isfinite(threshold) or threshold <= 0:
-            raise ValueError("Outlier thresholds must be finite positive values.")
-        keep &= ~((years == int(year)) & (values > threshold)).to_numpy()
-    return out.loc[keep].reset_index(drop=True)
-
-
 def adjust_income_to_2025(
     df: pd.DataFrame,
     income_columns: tuple[str, ...] = ("income", "income_effective"),
@@ -232,20 +234,18 @@ def adjust_income_to_2025(
     inflation = pd.to_numeric(out["inflation_to_2025"], errors="coerce")
     for column in income_columns:
         if column in out.columns:
-            # Within each year this is a positive scale transformation, preserving income ranks.
             out[f"{column}_adj"] = pd.to_numeric(out[column], errors="coerce") / exchange * inflation
     return out
 
 
 def prepare_panel(
-    database_path: str | Path,
+    database_path: str | Path = DEFAULT_TRUSTED_PATH,
     *,
     metadata_path: str | Path = DEFAULT_METADATA_PATH,
     start_year: int | None = None,
     end_year: int | None = None,
-    apply_outlier_cuts: bool = False,
 ) -> pd.DataFrame:
-    """Load, validate, filter, and monetarily harmonize the analytical panel."""
+    """Load the trusted data layer, filter years, and apply monetary harmonization."""
     panel = attach_monetary_metadata(validate_database(load_database(database_path)), metadata_path)
     if start_year is not None:
         panel = panel.loc[panel["year"] >= int(start_year)]
@@ -253,9 +253,6 @@ def prepare_panel(
         panel = panel.loc[panel["year"] <= int(end_year)]
     if panel.empty:
         raise ValueError("No observations remain after applying the year filter.")
-    panel = apply_manual_outlier_cuts(panel, enabled=apply_outlier_cuts)
-    if panel.empty:
-        raise ValueError("No observations remain after optional outlier filtering.")
     return adjust_income_to_2025(panel).reset_index(drop=True)
 
 
@@ -291,7 +288,10 @@ def read_raw_year(
         colspecs.append(_colspec(spec["effective_income_start"], spec["effective_income_width"]))
         names.append("income_effective_raw")
 
-    frames = [pd.read_fwf(path, colspecs=colspecs, names=names) for path in _raw_paths(raw_root, spec["raw_file_pattern"])]
+    frames = [
+        pd.read_fwf(path, colspecs=colspecs, names=names)
+        for path in _raw_paths(raw_root, spec["raw_file_pattern"])
+    ]
     return standardize_income_frame(pd.concat(frames, ignore_index=True), spec)
 
 
@@ -306,7 +306,7 @@ def write_refined_year(df: pd.DataFrame, output_root: str | Path, year: int) -> 
 
 def build_refined_datasets(
     raw_root: str | Path,
-    output_root: str | Path,
+    output_root: str | Path = DEFAULT_REFINED_PATH,
     metadata_path: str | Path | None = None,
     years: list[int] | None = None,
     include_effective: bool = True,
