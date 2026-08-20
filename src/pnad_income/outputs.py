@@ -38,13 +38,12 @@ class OutputPaths:
     root: Path
     figures: Path
     tables: Path
-    reports: Path
 
 
 def prepare_output_paths(output_root: str | Path) -> OutputPaths:
     root = Path(output_root).expanduser().resolve()
-    paths = OutputPaths(root, root / "figures", root / "tables", root / "reports")
-    for path in (paths.root, paths.figures, paths.tables, paths.reports):
+    paths = OutputPaths(root, root / "figures", root / "tables")
+    for path in (paths.root, paths.figures, paths.tables):
         path.mkdir(parents=True, exist_ok=True)
     return paths
 
@@ -119,7 +118,7 @@ def export_analysis_outputs(
     grid_ncols: int = 3,
     complete_nrows: int = 6,
     complete_ncols: int = 4,
-    histogram_bins: int = 60,
+    histogram_bins: int = 100,
     dpi: int = 200,
     gini_references: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
@@ -175,24 +174,37 @@ def export_analysis_outputs(
     ccdf = results.ccdf_nominal_adjusted
     page_specs = [
         (
-            "histogram_income_linear",
-            plot_histogram_grid(results.panel, years=years, bins=histogram_bins, yscale="linear", nrows=complete_nrows, ncols=complete_ncols),
-        ),
-        (
             "histogram_income_log_frequency",
-            plot_histogram_grid(results.panel, years=years, bins=histogram_bins, yscale="log", nrows=complete_nrows, ncols=complete_ncols),
-        ),
-        (
-            "ccdf_income_linear",
-            plot_ccdf_grid(ccdf, measure="income", years=years, transform="linear", nrows=complete_nrows, ncols=complete_ncols),
+            plot_histogram_grid(
+                results.panel,
+                years=years,
+                bins=histogram_bins,
+                yscale="log",
+                nrows=complete_nrows,
+                ncols=complete_ncols,
+            ),
         ),
         (
             "ccdf_income_loglog",
-            plot_ccdf_grid(ccdf, measure="income", years=years, transform="loglog", nrows=complete_nrows, ncols=complete_ncols),
+            plot_ccdf_grid(
+                ccdf,
+                measure="income",
+                years=years,
+                transform="loglog",
+                nrows=complete_nrows,
+                ncols=complete_ncols,
+            ),
         ),
         (
-            "ccdf_income_double_log_legacy",
-            plot_ccdf_grid(ccdf, measure="income", years=years, transform="double_log", nrows=complete_nrows, ncols=complete_ncols),
+            "ccdf_income_gompertz",
+            plot_ccdf_grid(
+                ccdf,
+                measure="income",
+                years=years,
+                transform="gompertz",
+                nrows=complete_nrows,
+                ncols=complete_ncols,
+            ),
         ),
         (
             "lorenz_income",
@@ -200,11 +212,23 @@ def export_analysis_outputs(
         ),
         (
             "lorenz_income_annotated_g_p_k_z",
-            plot_lorenz_grid(results.panel, years=years, nrows=complete_nrows, ncols=complete_ncols, annotate=True),
+            plot_lorenz_grid(
+                results.panel,
+                years=years,
+                nrows=complete_nrows,
+                ncols=complete_ncols,
+                annotate=True,
+            ),
         ),
         (
             "ccdf_nominal_vs_adjusted_loglog",
-            plot_measure_comparison_grid(ccdf, years=years, transform="loglog", nrows=complete_nrows, ncols=complete_ncols),
+            plot_measure_comparison_grid(
+                ccdf,
+                years=years,
+                transform="loglog",
+                nrows=complete_nrows,
+                ncols=complete_ncols,
+            ),
         ),
     ]
     for stem, figures in page_specs:
@@ -213,11 +237,14 @@ def export_analysis_outputs(
     if selected_year is not None:
         year = int(selected_year)
         individual = {
-            f"histogram_income_{year}_linear.png": plot_histogram(results.panel, year, bins=histogram_bins),
-            f"histogram_income_{year}_log_frequency.png": plot_histogram(results.panel, year, bins=histogram_bins, yscale="log"),
-            f"ccdf_income_{year}_linear.png": plot_ccdf(ccdf, year, transform="linear"),
+            f"histogram_income_{year}_log_frequency.png": plot_histogram(
+                results.panel,
+                year,
+                bins=histogram_bins,
+                yscale="log",
+            ),
             f"ccdf_income_{year}_loglog.png": plot_ccdf(ccdf, year, transform="loglog"),
-            f"ccdf_income_{year}_double_log_legacy.png": plot_ccdf(ccdf, year, transform="double_log"),
+            f"ccdf_income_{year}_gompertz.png": plot_ccdf(ccdf, year, transform="gompertz"),
             f"lorenz_income_{year}.png": plot_lorenz_curve(results.panel, year),
             f"lorenz_income_{year}_annotated_g_p_k_z.png": plot_lorenz_curve(results.panel, year, annotate=True),
             f"ccdf_nominal_vs_adjusted_{year}_loglog.png": plot_measure_comparison(ccdf, year),
@@ -230,11 +257,36 @@ def export_analysis_outputs(
         selected_specs = [
             (
                 "selected_histogram_income_log_frequency",
-                plot_histogram_grid(results.panel, years=selected, bins=histogram_bins, yscale="log", nrows=grid_nrows, ncols=grid_ncols),
+                plot_histogram_grid(
+                    results.panel,
+                    years=selected,
+                    bins=histogram_bins,
+                    yscale="log",
+                    nrows=grid_nrows,
+                    ncols=grid_ncols,
+                ),
             ),
             (
                 "selected_ccdf_income_loglog",
-                plot_ccdf_grid(ccdf, measure="income", years=selected, transform="loglog", nrows=grid_nrows, ncols=grid_ncols),
+                plot_ccdf_grid(
+                    ccdf,
+                    measure="income",
+                    years=selected,
+                    transform="loglog",
+                    nrows=grid_nrows,
+                    ncols=grid_ncols,
+                ),
+            ),
+            (
+                "selected_ccdf_income_gompertz",
+                plot_ccdf_grid(
+                    ccdf,
+                    measure="income",
+                    years=selected,
+                    transform="gompertz",
+                    nrows=grid_nrows,
+                    ncols=grid_ncols,
+                ),
             ),
             (
                 "selected_lorenz_income",
@@ -242,7 +294,13 @@ def export_analysis_outputs(
             ),
             (
                 "selected_lorenz_income_annotated_g_p_k_z",
-                plot_lorenz_grid(results.panel, years=selected, nrows=grid_nrows, ncols=grid_ncols, annotate=True),
+                plot_lorenz_grid(
+                    results.panel,
+                    years=selected,
+                    nrows=grid_nrows,
+                    ncols=grid_ncols,
+                    annotate=True,
+                ),
             ),
         ]
         for stem, figures in selected_specs:
