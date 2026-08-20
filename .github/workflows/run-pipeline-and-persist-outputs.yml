@@ -78,6 +78,8 @@ jobs:
           import os
           from pathlib import Path
 
+          import pandas as pd
+
           output_root = Path(os.environ['OUTPUT_ROOT'])
           trusted_root = Path(os.environ['TRUSTED_ROOT'])
 
@@ -117,11 +119,43 @@ jobs:
               if path.is_file() and not path.name.startswith(('eda_', 'paper_'))
           ]
 
+          manifest_columns = [
+              'category',
+              'stage',
+              'data_layer',
+              'filename',
+              'path',
+              'size_bytes',
+              'size_human',
+              'format',
+              'description',
+              'url',
+              'sha256',
+              'commit_sha',
+              'generated_at',
+          ]
+          manifest = pd.read_csv(output_root / 'manifest.csv') if (output_root / 'manifest.csv').exists() else pd.DataFrame()
+          manifest_schema_ok = manifest.columns.tolist() == manifest_columns
+          portable_paths = bool(not manifest.empty and manifest['path'].str.startswith('outputs/').all())
+          urls_ok = bool(not manifest.empty and manifest['url'].str.startswith('https://github.com/').all())
+          descriptions_ok = bool(not manifest.empty and manifest['description'].fillna('').str.strip().ne('').all())
+          sha256_ok = bool(not manifest.empty and manifest['sha256'].fillna('').str.fullmatch(r'[0-9a-f]{64}').all())
+          commit_sha_ok = bool(not manifest.empty and manifest['commit_sha'].fillna('').str.len().ge(7).all())
+          generated_at_ok = bool(not manifest.empty and manifest['generated_at'].fillna('').str.strip().ne('').all())
+
           print('TRUSTED_FILE_COUNT', len(trusted_files))
           print('FIGURE_COUNT', len(figures))
           print('MISSING_REQUIRED', missing)
           print('NESTED_OUTPUT_DIRS', nested_output_dirs)
           print('UNPREFIXED_OUTPUTS', wrong_names)
+          print('MANIFEST_ROWS', len(manifest))
+          print('MANIFEST_SCHEMA_OK', manifest_schema_ok)
+          print('MANIFEST_PORTABLE_PATHS', portable_paths)
+          print('MANIFEST_URLS_OK', urls_ok)
+          print('MANIFEST_DESCRIPTIONS_OK', descriptions_ok)
+          print('MANIFEST_SHA256_OK', sha256_ok)
+          print('MANIFEST_COMMIT_SHA_OK', commit_sha_ok)
+          print('MANIFEST_GENERATED_AT_OK', generated_at_ok)
 
           if len(trusted_files) != 45:
               raise SystemExit(f'Expected 45 trusted annual Parquet files, found {len(trusted_files)}')
@@ -133,6 +167,16 @@ jobs:
               raise SystemExit(1)
           if len(figures) < 20:
               raise SystemExit(f'Expected at least 20 figures, found {len(figures)}')
+          if not all([
+              manifest_schema_ok,
+              portable_paths,
+              urls_ok,
+              descriptions_ok,
+              sha256_ok,
+              commit_sha_ok,
+              generated_at_ok,
+          ]):
+              raise SystemExit('Manifest audit failed.')
           PY
 
       - name: Upload generated outputs

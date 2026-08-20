@@ -3,7 +3,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
+import hashlib
+import os
 from pathlib import Path
+import re
+import subprocess
 from typing import Iterable
 
 import matplotlib.pyplot as plt
@@ -33,6 +38,120 @@ from plotting import (
     plot_top_income_shares,
     plot_zanardi,
 )
+
+
+MANIFEST_COLUMNS = [
+    "category",
+    "stage",
+    "data_layer",
+    "filename",
+    "path",
+    "size_bytes",
+    "size_human",
+    "format",
+    "description",
+    "url",
+    "sha256",
+    "commit_sha",
+    "generated_at",
+]
+
+
+ARTIFACT_DESCRIPTIONS = {
+    "eda_refined_descriptive_statistics.csv": (
+        "Annual descriptive statistics for the refined layer before statistical cleaning, used as the baseline for evaluating the trusted-layer transformation."
+    ),
+    "eda_trusted_descriptive_statistics.csv": (
+        "Annual descriptive statistics for the trusted layer after deterministic data-quality treatment and removal of flagged records."
+    ),
+    "eda_refined_value_frequencies.csv": (
+        "Exact-value income frequencies in the refined layer, supporting inspection of repeated values, discrete structures, and concentration before cleaning."
+    ),
+    "eda_trusted_value_frequencies.csv": (
+        "Exact-value income frequencies in the trusted layer, allowing comparison of the observed value structure after cleaning."
+    ),
+    "eda_refined_metadata_sentinel_occurrences.csv": (
+        "Annual counts of metadata-defined missing-value sentinel codes identified in the refined layer."
+    ),
+    "eda_refined_outlier_diagnostics.csv": (
+        "Annual upper-tail and potential-outlier diagnostics for the refined income data before construction of the trusted layer."
+    ),
+    "eda_trusted_outlier_diagnostics.csv": (
+        "Annual upper-tail diagnostics for trusted income data after deterministic cleaning."
+    ),
+    "eda_trusted_data_quality_diagnostics.csv": (
+        "Compact trusted-layer quality summary covering valid observations, missingness, and numerical support of analytical variables."
+    ),
+    "eda_cleaning_thresholds.csv": (
+        "Year-specific statistical thresholds estimated by the configured outlier rule when constructing the trusted layer."
+    ),
+    "eda_cleaning_audit.csv": (
+        "Annual cleaning audit recording initial sample size, sentinel and outlier removals, final trusted sample size, and removal rates."
+    ),
+    "paper_pipeline_overview.csv": (
+        "Compact overview of the scientific pipeline execution, including temporal coverage, observation counts, and availability of major analytical outputs."
+    ),
+    "paper_annual_summary.csv": (
+        "Consolidated annual summary of descriptive statistics and core analytical measures used to characterize the longitudinal income series."
+    ),
+    "paper_annual_inequality_indices.csv": (
+        "Annual inequality and concentration indices calculated from trusted data, including Gini, Pietra, Kolkata, Zanardi, Theil, Atkinson, top-income, Shannon, and Herfindahl measures."
+    ),
+    "paper_ccdf_income_nominal_adjusted.parquet": (
+        "Annual empirical CCDF data for nominal and monetarily adjusted income, stored in Parquet format for reproducible distributional analysis and plotting."
+    ),
+    "paper_ccdf_income_habitual_effective.parquet": (
+        "Annual empirical CCDF data comparing habitual and effective income measures when both are available in the analytical data."
+    ),
+    "paper_gini_external_references.csv": (
+        "Documented external Gini reference series supplied for validation of the internally calculated PNAD inequality trajectory."
+    ),
+    "paper_gini_external_comparison.csv": (
+        "Year-aligned comparison between internally calculated Gini coefficients and documented external reference series."
+    ),
+    "paper_gini_external_validation_statistics.csv": (
+        "Validation statistics summarizing agreement between calculated and external Gini series, including error and association measures."
+    ),
+    "paper_inequality_gini_all_years.png": (
+        "Temporal evolution of the Gini coefficient across all available PNAD and PNAD Contínua survey years."
+    ),
+    "paper_inequality_top_income_shares_all_years.png": (
+        "Temporal evolution of income shares held by the upper tail of the distribution, including the top 10%, 1%, and 0.1%."
+    ),
+    "paper_inequality_extended_pietra_k_z_all_years.png": (
+        "Joint temporal evolution of the Pietra index, Kolkata k-index, and Zanardi Z statistic across the harmonized series."
+    ),
+    "paper_inequality_indices_all_years.png": (
+        "Longitudinal comparison of the principal inequality indices calculated from the trusted annual income distributions."
+    ),
+    "paper_inequality_zanardi_all_years.png": (
+        "Temporal evolution of the Zanardi Z statistic across all available survey years."
+    ),
+    "paper_inequality_information_all_years.png": (
+        "Temporal evolution of information- and concentration-based inequality measures, including Shannon-derived and Herfindahl quantities."
+    ),
+    "paper_inequality_gini_pietra_kolkata_relations.png": (
+        "Empirical relationships among the Gini, Pietra, and Kolkata inequality indices across annual PNAD income distributions."
+    ),
+    "paper_inequality_pietra_kolkata_bound_all_years.png": (
+        "Annual comparison of Pietra and Kolkata indices against the analytical relationship or bound examined by the project."
+    ),
+    "paper_inequality_gini_zanardi_phase.png": (
+        "Phase-space representation of the relationship between Gini inequality and the Zanardi Z statistic across survey years."
+    ),
+    "paper_gini_external_validation.png": (
+        "Graphical comparison of the internally calculated Gini series with documented external reference series used for technical validation."
+    ),
+    "eda_refined_outlier_income_upper_tail_all_years.png": (
+        "Upper-tail income diagnostic for all refined survey years before trusted-layer cleaning."
+    ),
+    "eda_trusted_outlier_income_upper_tail_all_years.png": (
+        "Upper-tail income diagnostic for all trusted survey years after deterministic cleaning."
+    ),
+    "eda_compare_outlier_income_upper_tail_refined_trusted.png": (
+        "Direct comparison of refined and trusted upper tails, showing the empirical effect of the outlier-treatment rule."
+    ),
+}
 
 
 @dataclass(frozen=True)
@@ -94,16 +213,160 @@ def save_figure(figure, path: str | Path, *, dpi=200, close=True) -> Path:
     return path
 
 
-def _rows(paths: Iterable[Path], category: str) -> list[dict[str, object]]:
-    return [
-        {
-            "category": category,
-            "filename": path.name,
-            "path": str(path),
-            "size_bytes": path.stat().st_size,
-        }
-        for path in paths
-    ]
+def _human_size(size_bytes: int) -> str:
+    """Return a compact human-readable representation of a byte count."""
+    value = float(size_bytes)
+    for unit in ("B", "KB", "MB", "GB", "TB"):
+        if value < 1024 or unit == "TB":
+            return f"{value:.0f} {unit}" if unit == "B" else f"{value:.1f} {unit}"
+        value /= 1024
+    return f"{value:.1f} TB"
+
+
+def _sha256(path: Path) -> str:
+    """Compute the SHA-256 digest of one persisted artifact."""
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _current_commit_sha() -> str:
+    """Resolve the source commit from GitHub Actions or the local Git checkout."""
+    github_sha = os.getenv("GITHUB_SHA", "").strip()
+    if github_sha:
+        return github_sha
+    try:
+        return subprocess.check_output(
+            ["git", "rev-parse", "HEAD"],
+            text=True,
+            stderr=subprocess.DEVNULL,
+        ).strip()
+    except (OSError, subprocess.CalledProcessError):
+        return "unknown"
+
+
+def _generated_at() -> str:
+    """Return one UTC ISO-8601 timestamp for the export run."""
+    explicit = os.getenv("PNAD_GENERATED_AT", "").strip()
+    if explicit:
+        return explicit
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def _artifact_stage(filename: str) -> str:
+    if filename.startswith("eda_"):
+        return "eda"
+    if filename.startswith("paper_"):
+        return "paper"
+    return "metadata"
+
+
+def _artifact_data_layer(filename: str) -> str:
+    if filename.startswith("eda_refined_"):
+        return "refined"
+    if filename.startswith("eda_trusted_"):
+        return "trusted"
+    if filename.startswith("eda_compare_"):
+        return "refined+trusted"
+    if filename.startswith("eda_cleaning_"):
+        return "refined_to_trusted"
+    if filename.startswith("paper_gini_external_"):
+        return "trusted+external"
+    if filename.startswith("paper_"):
+        return "trusted"
+    return "derived"
+
+
+def _describe_artifact(filename: str) -> str:
+    """Return a concise scientific description for every generated artifact."""
+    if filename in ARTIFACT_DESCRIPTIONS:
+        return ARTIFACT_DESCRIPTIONS[filename]
+
+    page_match = re.search(r"_page_(\d{2})\.png$", filename)
+    page_text = f" Page {int(page_match.group(1))} of the paginated figure set." if page_match else ""
+
+    stems = {
+        "eda_refined_histogram_income": "Annual income histograms for the refined layer before statistical cleaning.",
+        "eda_trusted_histogram_income": "Annual income histograms for the trusted layer after deterministic cleaning.",
+        "eda_refined_boxplot_income": "Annual refined-layer income boxplots used to inspect dispersion and extreme values before cleaning.",
+        "eda_trusted_boxplot_income": "Annual trusted-layer income boxplots used to inspect dispersion after cleaning.",
+        "paper_ccdf_income_loglog": "Annual empirical income CCDFs in log-log coordinates for inspection of distributional shape and the upper tail.",
+        "paper_ccdf_income_gompertz": "Annual Gompertz-transformed income CCDFs used as a complementary diagnostic of distributional form.",
+        "paper_lorenz_income_annotated_g_p_k_z": "Annual Lorenz curves annotated with Gini G, Pietra P, Kolkata k, and Zanardi Z inequality measures.",
+        "paper_lorenz_income": "Annual Lorenz curves for the trusted income distributions.",
+        "paper_ccdf_income_nominal_vs_adjusted_loglog": "Annual log-log comparison of nominal and monetarily adjusted income CCDFs.",
+        "eda_trusted_selected_histogram_income": "Selected-year trusted-layer income histograms using the user-configured subplot grid.",
+        "paper_selected_ccdf_income_loglog": "Selected-year empirical income CCDFs in log-log coordinates using the user-configured subplot grid.",
+        "paper_selected_ccdf_income_gompertz": "Selected-year Gompertz-transformed income CCDFs using the user-configured subplot grid.",
+        "paper_selected_lorenz_income": "Selected-year Lorenz curves using the user-configured subplot grid.",
+    }
+    for stem, description in stems.items():
+        if filename.startswith(stem):
+            return description + page_text
+
+    year_match = re.search(r"_(19\d{2}|20\d{2})(?:_|\.)", filename)
+    year_text = f" for survey year {year_match.group(1)}" if year_match else ""
+    if filename.startswith("eda_trusted_histogram_income_"):
+        return f"Trusted-layer income histogram{year_text}, generated for detailed inspection of one selected year."
+    if filename.startswith("paper_ccdf_income_") and filename.endswith("_loglog.png"):
+        return f"Empirical trusted-income CCDF in log-log coordinates{year_text}."
+    if filename.startswith("paper_ccdf_income_") and filename.endswith("_gompertz.png"):
+        return f"Gompertz-transformed trusted-income CCDF{year_text}."
+    if filename.startswith("paper_lorenz_income_") and "annotated_g_p_k_z" in filename:
+        return f"Lorenz curve{year_text}, annotated with Gini, Pietra, Kolkata, and Zanardi measures."
+    if filename.startswith("paper_lorenz_income_"):
+        return f"Trusted-income Lorenz curve{year_text}."
+    if filename.startswith("paper_ccdf_income_nominal_vs_adjusted_"):
+        return f"Log-log comparison of nominal and adjusted income CCDFs{year_text}."
+
+    return "Generated PNAD analytical artifact produced by the reproducible output pipeline."
+
+
+def _canonical_output_path(path: Path, output_root: Path) -> str:
+    """Return a repository-relative canonical path independent of runner location."""
+    relative = path.resolve().relative_to(output_root.resolve())
+    return (Path("outputs") / relative).as_posix()
+
+
+def _artifact_url(canonical_path: str) -> str:
+    repository = os.getenv("GITHUB_REPOSITORY", "ozsp12/pnad_income").strip() or "ozsp12/pnad_income"
+    server = os.getenv("GITHUB_SERVER_URL", "https://github.com").rstrip("/")
+    branch = os.getenv("PNAD_MANIFEST_BRANCH", "main").strip() or "main"
+    return f"{server}/{repository}/blob/{branch}/{canonical_path}"
+
+
+def _rows(
+    paths: Iterable[Path],
+    category: str,
+    *,
+    output_root: Path,
+    commit_sha: str,
+    generated_at: str,
+) -> list[dict[str, object]]:
+    rows = []
+    for path in paths:
+        canonical_path = _canonical_output_path(path, output_root)
+        size_bytes = path.stat().st_size
+        rows.append(
+            {
+                "category": category,
+                "stage": _artifact_stage(path.name),
+                "data_layer": _artifact_data_layer(path.name),
+                "filename": path.name,
+                "path": canonical_path,
+                "size_bytes": size_bytes,
+                "size_human": _human_size(size_bytes),
+                "format": path.suffix.lower().lstrip("."),
+                "description": _describe_artifact(path.name),
+                "url": _artifact_url(canonical_path),
+                "sha256": _sha256(path),
+                "commit_sha": commit_sha,
+                "generated_at": generated_at,
+            }
+        )
+    return rows
 
 
 def _save_pages(figures, directory: Path, stem: str, dpi: int) -> list[Path]:
@@ -150,6 +413,20 @@ def export_analysis_outputs(
     """Persist trusted scientific outputs plus refined-versus-trusted EDA diagnostics."""
     paths = prepare_output_paths(output_root)
     manifest: list[dict[str, object]] = []
+    commit_sha = _current_commit_sha()
+    generated_at = _generated_at()
+
+    def add_manifest_rows(saved_paths: Iterable[Path], category: str) -> None:
+        manifest.extend(
+            _rows(
+                saved_paths,
+                category,
+                output_root=paths.root,
+                commit_sha=commit_sha,
+                generated_at=generated_at,
+            )
+        )
+
     indices = annual_inequality_indices(results.panel)
     trusted = results.panel.copy()
     refined = refined_panel.copy() if refined_panel is not None else trusted.copy()
@@ -189,7 +466,7 @@ def export_analysis_outputs(
         )
 
     saved_tables = [save_table(frame, paths.tables / name) for name, frame in tables.items()]
-    manifest.extend(_rows(saved_tables, "table"))
+    add_manifest_rows(saved_tables, "table")
 
     scalar_figures = {
         "paper_inequality_gini_all_years.png": plot_gini_evolution(results.summary),
@@ -205,7 +482,7 @@ def export_analysis_outputs(
     if gini_references is not None and not gini_references.empty:
         scalar_figures["paper_gini_external_validation.png"] = plot_gini_validation(results.summary, gini_references)
     saved_figures = [save_figure(fig, paths.figures / name, dpi=dpi) for name, fig in scalar_figures.items()]
-    manifest.extend(_rows(saved_figures, "figure"))
+    add_manifest_rows(saved_figures, "figure")
 
     hist_limits = eda_refined.income_limits_by_year()
     box_limits = eda_refined.positive_limits_by_year()
@@ -239,7 +516,7 @@ def export_analysis_outputs(
         ),
     ]
     for stem, figures in eda_page_specs:
-        manifest.extend(_rows(_save_pages(figures, paths.figures, stem, dpi), "figure"))
+        add_manifest_rows(_save_pages(figures, paths.figures, stem, dpi), "figure")
 
     shared_ylim = _shared_positive_ylim(refined, trusted)
     eda_scalar = {
@@ -248,7 +525,7 @@ def export_analysis_outputs(
         "eda_compare_outlier_income_upper_tail_refined_trusted.png": eda_refined.compare_upper_tail_figure(eda_trusted),
     }
     saved_eda_scalar = [save_figure(fig, paths.figures / name, dpi=dpi) for name, fig in eda_scalar.items()]
-    manifest.extend(_rows(saved_eda_scalar, "figure"))
+    add_manifest_rows(saved_eda_scalar, "figure")
 
     years = results.years
     ccdf = results.ccdf_nominal_adjusted
@@ -301,7 +578,7 @@ def export_analysis_outputs(
         ),
     ]
     for stem, figures in paper_page_specs:
-        manifest.extend(_rows(_save_pages(figures, paths.figures, stem, dpi), "figure"))
+        add_manifest_rows(_save_pages(figures, paths.figures, stem, dpi), "figure")
 
     if selected_year is not None:
         year = int(selected_year)
@@ -319,7 +596,7 @@ def export_analysis_outputs(
             f"paper_ccdf_income_nominal_vs_adjusted_{year}_loglog.png": plot_measure_comparison(ccdf, year),
         }
         paths_saved = [save_figure(fig, paths.figures / name, dpi=dpi) for name, fig in individual.items()]
-        manifest.extend(_rows(paths_saved, "figure"))
+        add_manifest_rows(paths_saved, "figure")
 
     if selected_years is not None:
         selected = [int(year) for year in selected_years]
@@ -363,23 +640,8 @@ def export_analysis_outputs(
             ),
         ]
         for stem, figures in selected_specs:
-            manifest.extend(_rows(_save_pages(figures, paths.figures, stem, dpi), "figure"))
+            add_manifest_rows(_save_pages(figures, paths.figures, stem, dpi), "figure")
 
-    manifest_frame = pd.DataFrame(manifest)
-    manifest_path = save_table(manifest_frame, paths.root / "manifest.csv")
-    return pd.concat(
-        [
-            manifest_frame,
-            pd.DataFrame(
-                [
-                    {
-                        "category": "manifest",
-                        "filename": manifest_path.name,
-                        "path": str(manifest_path),
-                        "size_bytes": manifest_path.stat().st_size,
-                    }
-                ]
-            ),
-        ],
-        ignore_index=True,
-    )
+    manifest_frame = pd.DataFrame(manifest, columns=MANIFEST_COLUMNS)
+    save_table(manifest_frame, paths.root / "manifest.csv")
+    return manifest_frame
