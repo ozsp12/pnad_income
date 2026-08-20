@@ -1,4 +1,4 @@
-"""Plots used by the PNAD income notebook and output exporter."""
+"""Scientific figures used by the PNAD income output exporter."""
 
 from __future__ import annotations
 
@@ -51,12 +51,23 @@ def _axes(page, rows, cols, panel_size=(4.0, 3.0)):
     return fig, flat
 
 
-def _finite(df: pd.DataFrame, year: int, value_col="income") -> pd.Series:
+def _finite(df: pd.DataFrame, year: int, value_col="income", *, positive=False) -> pd.Series:
     if value_col not in df.columns:
         raise KeyError(f"Column '{value_col}' is absent from the data.")
     _years(df, [year])
     values = pd.to_numeric(df.loc[df["year"] == int(year), value_col], errors="coerce")
-    return values[np.isfinite(values)]
+    values = values[np.isfinite(values)]
+    return values[values > 0] if positive else values
+
+
+def _measure_label(measure: str) -> str:
+    labels = {
+        "income": "Nominal income",
+        "income_adj": "Income (2025 USD)",
+        "income_effective": "Effective income",
+        "income_effective_adj": "Effective income (2025 USD)",
+    }
+    return labels.get(measure, measure)
 
 
 def plot_gini_evolution(summary, value_col="income", years=None, figsize=(10, 5)):
@@ -121,15 +132,15 @@ def plot_gini_validation(summary, references, value_col="income", figsize=(10, 5
     return fig
 
 
-def plot_histogram(df, year, value_col="income", bins=60, yscale="linear", figsize=(7, 4.5)):
+def plot_histogram(df, year, value_col="income", bins=100, yscale="log", figsize=(7, 4.5)):
     if yscale not in {"linear", "log"}:
         raise ValueError("yscale must be 'linear' or 'log'.")
-    values = _finite(df, year, value_col)
+    values = _finite(df, year, value_col, positive=True)
     fig, ax = plt.subplots(figsize=figsize)
-    ax.hist(values, bins=bins)
-    ax.set_yscale(yscale)
-    ax.set(title=f"PNAD {int(year)}", xlabel="Income", ylabel="Frequency")
-    ax.grid(True, alpha=0.25)
+    ax.hist(values, bins=bins, log=(yscale == "log"))
+    ylabel = "Frequency (log scale)" if yscale == "log" else "Frequency"
+    ax.set(title=f"PNAD {int(year)}", xlabel="Income", ylabel=ylabel)
+    ax.grid(axis="y", alpha=0.5, linestyle="--")
     fig.tight_layout()
     return fig
 
@@ -138,43 +149,57 @@ def plot_histogram_grid(
     df,
     value_col="income",
     years=None,
-    bins=60,
-    yscale="linear",
+    bins=100,
+    yscale="log",
     nrows=None,
     ncols=None,
     max_panels=DEFAULT_MAX_PANELS,
     panel_size=(4, 3),
 ):
+    if yscale not in {"linear", "log"}:
+        raise ValueError("yscale must be 'linear' or 'log'.")
     selected = _years(df, years)
     rows, cols, pages = _grid(selected, nrows, ncols, max_panels)
     figures = []
     for page in pages:
         fig, axes = _axes(page, rows, cols, panel_size)
         for ax, year in zip(axes, page):
-            values = _finite(df, year, value_col)
-            ax.hist(values, bins=bins)
-            ax.set_yscale(yscale)
-            ax.set(title=f"PNAD {year}", xlabel="Income", ylabel="Frequency")
-            ax.grid(True, alpha=0.25)
+            values = _finite(df, year, value_col, positive=True)
+            ax.hist(values, bins=bins, log=(yscale == "log"))
+            ylabel = "Frequency (log scale)" if yscale == "log" else "Frequency"
+            ax.set(title=f"PNAD {year}", xlabel="Income", ylabel=ylabel)
+            ax.grid(axis="y", alpha=0.5, linestyle="--")
         fig.suptitle(f"Annual histograms: {value_col} — {page[0]}–{page[-1]}", y=1.002)
         fig.tight_layout()
         figures.append(fig)
     return figures
 
 
+def _ccdf_probability(frame) -> np.ndarray:
+    values = frame["ccdf"].to_numpy(float)
+    finite = values[np.isfinite(values)]
+    if finite.size and np.nanmax(finite) > 1.0 + 1e-12:
+        values = values / 100.0
+    return values
+
+
 def _ccdf_xy(frame, transform):
     x = frame["bin"].to_numpy(float)
-    y = frame["ccdf"].to_numpy(float)
+    probability = _ccdf_probability(frame)
     if transform == "linear":
-        mask = np.isfinite(x) & np.isfinite(y)
-        return x[mask], y[mask]
+        mask = np.isfinite(x) & np.isfinite(probability)
+        return x[mask], 100.0 * probability[mask]
     if transform == "loglog":
-        mask = np.isfinite(x) & np.isfinite(y) & (x > 0) & (y > 0)
-        return x[mask], y[mask]
-    if transform == "double_log":
-        mask = np.isfinite(x) & np.isfinite(y) & (y > 1)
-        return x[mask], np.log(np.log(y[mask]))
-    raise ValueError("transform must be 'linear', 'loglog', or 'double_log'.")
+        mask = np.isfinite(x) & np.isfinite(probability) & (x > 0) & (probability > 0)
+        return x[mask], 100.0 * probability[mask]
+    if transform in {"gompertz", "double_log"}:
+        mask = np.isfinite(x) & np.isfinite(probability) & (probability > 0) & (probability < 1)
+        return x[mask], np.log(-np.log(probability[mask]))
+    raise ValueError("transform must be 'linear', 'loglog', 'gompertz', or 'double_log'.")
+
+
+def _ccdf_ylabel(transform: str) -> str:
+    return "ln[-ln(S(x))]" if transform in {"gompertz", "double_log"} else "CCDF [%]"
 
 
 def _plot_ccdf_line(ax, frame, transform, label=None):
@@ -185,14 +210,13 @@ def _plot_ccdf_line(ax, frame, transform, label=None):
         ax.plot(x, y, label=label)
 
 
-def plot_ccdf(ccdf, year, measure="income", transform="linear", figsize=(7, 4.5)):
+def plot_ccdf(ccdf, year, measure="income", transform="loglog", figsize=(7, 4.5)):
     frame = ccdf.loc[(ccdf["year"] == int(year)) & (ccdf["measure"] == measure)]
     if frame.empty:
         raise ValueError(f"No CCDF rows are available for {measure} in {year}.")
     fig, ax = plt.subplots(figsize=figsize)
     _plot_ccdf_line(ax, frame, transform)
-    ylabel = "ln[ln(CCDF [%])]" if transform == "double_log" else "CCDF [%]"
-    ax.set(title=f"PNAD {int(year)} — {measure}", xlabel="Income", ylabel=ylabel)
+    ax.set(title=f"PNAD {int(year)} — {_measure_label(measure)}", xlabel="Income", ylabel=_ccdf_ylabel(transform))
     ax.grid(True, alpha=0.3)
     fig.tight_layout()
     return fig
@@ -202,7 +226,7 @@ def plot_ccdf_grid(
     ccdf,
     measure="income",
     years=None,
-    transform="linear",
+    transform="loglog",
     nrows=None,
     ncols=None,
     max_panels=DEFAULT_MAX_PANELS,
@@ -218,9 +242,9 @@ def plot_ccdf_grid(
         fig, axes = _axes(page, rows, cols, panel_size)
         for ax, year in zip(axes, page):
             _plot_ccdf_line(ax, frame.loc[frame["year"] == year], transform)
-            ax.set(title=f"PNAD {year}", xlabel="Income", ylabel="CCDF [%]")
+            ax.set(title=f"PNAD {year}", xlabel="Income", ylabel=_ccdf_ylabel(transform))
             ax.grid(True, alpha=0.3)
-        fig.suptitle(f"Annual CCDF: {measure} — {page[0]}–{page[-1]} ({transform})", y=1.002)
+        fig.suptitle(f"Annual CCDF: {_measure_label(measure)} — {page[0]}–{page[-1]} ({transform})", y=1.002)
         fig.tight_layout()
         figures.append(fig)
     return figures
@@ -232,7 +256,7 @@ def plot_ccdf_selected_years(ccdf, measure, years, transform="loglog", figsize=(
     fig, ax = plt.subplots(figsize=figsize)
     for year in selected:
         _plot_ccdf_line(ax, frame.loc[frame["year"] == year], transform, str(year))
-    ax.set(xlabel="Income", ylabel="CCDF [%]", title=f"{measure}: selected survey years")
+    ax.set(xlabel="Income", ylabel=_ccdf_ylabel(transform), title=f"{_measure_label(measure)}: selected survey years")
     ax.grid(True, alpha=0.3)
     ax.legend(title="Year")
     fig.tight_layout()
@@ -252,11 +276,11 @@ def plot_measure_comparison(
         frame = ccdf.loc[(ccdf["year"] == int(year)) & (ccdf["measure"] == measure)]
         if frame.empty:
             continue
-        _plot_ccdf_line(ax, frame, transform, measure)
+        _plot_ccdf_line(ax, frame, transform, _measure_label(measure))
         plotted += 1
     if not plotted:
         raise ValueError(f"No requested measures are available for year {year}.")
-    ax.set(title=f"PNAD {int(year)}", xlabel="Income", ylabel="CCDF [%]")
+    ax.set(title=f"PNAD {int(year)}", xlabel="Income", ylabel=_ccdf_ylabel(transform))
     ax.grid(True, alpha=0.3)
     ax.legend()
     fig.tight_layout()
@@ -283,8 +307,8 @@ def plot_measure_comparison_grid(
             for measure in measures:
                 frame = available.loc[(available["year"] == year) & (available["measure"] == measure)]
                 if not frame.empty:
-                    _plot_ccdf_line(ax, frame, transform, measure)
-            ax.set(title=f"PNAD {year}", xlabel="Income", ylabel="CCDF [%]")
+                    _plot_ccdf_line(ax, frame, transform, _measure_label(measure))
+            ax.set(title=f"PNAD {year}", xlabel="Income", ylabel=_ccdf_ylabel(transform))
             ax.grid(True, alpha=0.3)
             ax.legend(fontsize="small")
         fig.suptitle(f"Annual measure comparison — {page[0]}–{page[-1]}", y=1.002)
