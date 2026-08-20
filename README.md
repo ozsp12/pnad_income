@@ -45,19 +45,14 @@ pnad_income/
 
 # Data and sources
 
-| Source | Coverage / series | Role in the project | Reference |
-|---|---|---|---|
-| Instituto Brasileiro de Geografia e Estatística (IBGE) | Annual PNAD through 2015 | Historical household microdata used to construct annual income files. | [PNAD annual microdata archive](https://ftp.ibge.gov.br/Trabalho_e_Rendimento/Pesquisa_Nacional_por_Amostra_de_Domicilios_anual/microdados/) |
-| Instituto Brasileiro de Geografia e Estatística (IBGE) | PNAD Contínua from 2016 onward | Recent household microdata used to extend the longitudinal series. | [PNAD Contínua quarterly microdata](https://ftp.ibge.gov.br/Trabalho_e_Rendimento/Pesquisa_Nacional_por_Amostra_de_Domicilios_continua/Trimestral/Microdados/) |
-| Banco Central do Brasil (BCB) | Historical and open exchange-rate data | Conversion factors used in cross-year monetary harmonization. | [Historical exchange rates](https://www.bcb.gov.br/estabilidadefinanceira/historicocotacoes) · [Open exchange-rate dataset](https://dadosabertos.bcb.gov.br/dataset/taxas-de-cambio-todos-os-boletins-diarios) |
-| BLS / FRED | CPIAUCSL | U.S. CPI series used for the project-level adjustment to September 2025 dollars. | [CPIAUCSL](https://fred.stlouisfed.org/series/CPIAUCSL) |
-| Project metadata | 1976–2025 | Survey fields, fixed-width positions when applicable, missing-value codes, currencies, exchange factors, inflation factors, and source URLs. | [`data/metadata/pnad_metadata.csv`](data/metadata/pnad_metadata.csv) |
+- [IBGE — PNAD annual microdata](https://ftp.ibge.gov.br/Trabalho_e_Rendimento/Pesquisa_Nacional_por_Amostra_de_Domicilios_anual/microdados/) — historical annual PNAD household microdata through 2015.
+- [IBGE — PNAD Contínua quarterly microdata](https://ftp.ibge.gov.br/Trabalho_e_Rendimento/Pesquisa_Nacional_por_Amostra_de_Domicilios_continua/Trimestral/Microdados/) — household microdata used to extend the series from 2016 onward.
+- [Banco Central do Brasil — historical exchange rates](https://www.bcb.gov.br/estabilidadefinanceira/historicocotacoes) — historical foreign-exchange information used in cross-year monetary harmonization.
+- [Banco Central do Brasil — open exchange-rate dataset](https://dadosabertos.bcb.gov.br/dataset/taxas-de-cambio-todos-os-boletins-diarios) — open exchange-rate data used to reproduce recent conversion factors.
+- [BLS / FRED — CPIAUCSL](https://fred.stlouisfed.org/series/CPIAUCSL) — U.S. CPI series used for the project-level adjustment to September 2025 dollars.
+- [`data/metadata/pnad_metadata.csv`](data/metadata/pnad_metadata.csv) — project metadata with survey fields, fixed-width positions when applicable, missing-value codes, currencies, exchange factors, inflation factors, and source URLs for each year.
 
-The four data layers have distinct roles. [`data/raw/`](data/raw/) is reserved for original source files and is not intended for repository storage. [`data/refined/`](data/refined/) contains structurally harmonized annual Parquet files. [`data/trusted/`](data/trusted/) is rebuilt deterministically from the refined layer after data-quality treatment and is the only layer used by scientific analyses. [`data/metadata/`](data/metadata/) contains the annual extraction and provenance information required to reproduce preparation and cleaning.
-
-# Methodology
-
-The root README intentionally keeps the methodological description concise. The deterministic refined-to-trusted cleaning rule, sentinel precedence and flag exclusivity, statistical outlier methods, monetary harmonization, CCDF construction, Lorenz analysis, and inequality measures are documented in [`src/README.md`](src/README.md), alongside the responsibilities of each source module.
+The four data layers have distinct roles: [`data/raw/`](data/raw/) is reserved for original source files and is not intended for repository storage; [`data/refined/`](data/refined/) contains structurally harmonized annual Parquet files; [`data/trusted/`](data/trusted/) is rebuilt deterministically from the refined layer after data-quality treatment and is the only layer used by scientific analyses; and [`data/metadata/`](data/metadata/) contains the annual extraction and provenance information required to reproduce preparation and cleaning. The deterministic refined-to-trusted cleaning rule, sentinel precedence and flag exclusivity, statistical outlier methods, monetary harmonization, CCDF construction, Lorenz analysis, and inequality measures are documented in [`src/README.md`](src/README.md), alongside the responsibilities of each source module.
 
 # Outputs and auditability
 
