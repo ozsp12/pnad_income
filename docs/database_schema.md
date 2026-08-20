@@ -29,7 +29,7 @@ The stored Portuguese names are part of the data record. The analytical implemen
 
 ## Monetary variables
 
-Exchange factors, historical currency labels, price-index values, and inflation-to-2025 factors are not duplicated in every observation-level Parquet file. They are year-level metadata stored in `config/pnad_metadata.csv` and joined to the panel during analysis. The adjusted variable generated in memory is therefore a derived analytical quantity rather than an additional field in the released annual record.
+Exchange factors, historical currency labels, price-index values, and inflation-to-2025 factors are not duplicated in every observation-level Parquet file. They are year-level metadata stored in `metadata/pnad_metadata.csv` and joined to the panel during analysis. The adjusted variable generated in memory is therefore a derived analytical quantity rather than an additional field in the released annual record.
 
 ## Additional income measures
 
