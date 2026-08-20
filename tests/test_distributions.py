@@ -1,6 +1,6 @@
 import numpy as np
 
-from pnad_income.distributions import compute_ccdf
+from pnad_income.analysis import compute_ccdf
 
 
 def test_ccdf_keeps_zero_income_in_denominator():

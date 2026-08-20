@@ -1,32 +1,19 @@
-"""High-level orchestration for the complete PNAD income analysis pipeline."""
+"""Thin orchestration layer for the PNAD income analysis."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-import re
 
 import pandas as pd
 
-from .config import DEFAULT_METADATA_PATH, load_metadata
-from .distributions import compare_income_measures_ccdf
-from .inequality import summary_statistics
-from .preprocessing import adjust_income_to_2025, apply_manual_outlier_cuts
-
-SUPPORTED_FILE_SUFFIXES = {".parquet", ".csv", ".feather", ".pkl", ".pickle", ".xlsx", ".xls"}
-YEAR_PATTERN = re.compile(r"(19|20)\d{2}")
-
-COLUMN_ALIASES = {
-    "ano": "year",
-    "renda": "income",
-    "renda_efetiva": "income_effective",
-    "renda_efet": "income_effective",
-}
+from .analysis import compare_income_measures_ccdf, summary_statistics
+from .data import DEFAULT_METADATA_PATH, prepare_panel as prepare_data_panel
 
 
 @dataclass(frozen=True)
 class PipelineConfig:
-    """Configuration required to execute the analytical pipeline."""
+    """Parameters required to execute the analysis."""
 
     database_path: str | Path
     metadata_path: str | Path = DEFAULT_METADATA_PATH
@@ -38,210 +25,92 @@ class PipelineConfig:
 
 @dataclass
 class PipelineResults:
-    """Structured outputs returned by :func:`run_pipeline`."""
+    """Core analytical products returned by :func:`run_pipeline`."""
 
     panel: pd.DataFrame
     summary: pd.DataFrame
-    ccdf_nominal_adjusted: pd.DataFrame
-    ccdf_habitual_effective: pd.DataFrame
+    ccdf: pd.DataFrame
     manual_outlier_cuts_applied: bool = False
 
     @property
     def years(self) -> list[int]:
-        """Return sorted survey years represented in the panel."""
         return sorted(self.panel["year"].dropna().astype(int).unique().tolist())
 
+    @property
+    def ccdf_nominal_adjusted(self) -> pd.DataFrame:
+        """Compatibility view for nominal and 2025-adjusted income."""
+        if self.ccdf.empty:
+            return self.ccdf.copy()
+        return self.ccdf.loc[self.ccdf["measure"].isin(["income", "income_adj"])].reset_index(drop=True)
 
-def _read_table(path: Path) -> pd.DataFrame:
-    """Read one supported tabular file."""
-    suffix = path.suffix.lower()
-    if suffix == ".parquet":
-        return pd.read_parquet(path)
-    if suffix == ".csv":
-        return pd.read_csv(path)
-    if suffix == ".feather":
-        return pd.read_feather(path)
-    if suffix in {".pkl", ".pickle"}:
-        return pd.read_pickle(path)
-    if suffix in {".xlsx", ".xls"}:
-        return pd.read_excel(path)
-    raise ValueError(f"Unsupported database format '{suffix}'.")
-
-
-def _normalize_column_names(df: pd.DataFrame) -> pd.DataFrame:
-    """Map stored Portuguese data-record names to the internal analytical schema."""
-    out = df.copy()
-    for alias, canonical in COLUMN_ALIASES.items():
-        if alias not in out.columns:
-            continue
-        if canonical in out.columns:
-            left = out[alias]
-            right = out[canonical]
-            equal = left.eq(right) | (left.isna() & right.isna())
-            if not bool(equal.all()):
-                raise ValueError(
-                    f"Conflicting columns '{alias}' and '{canonical}' are both present."
-                )
-            out = out.drop(columns=[alias])
-        else:
-            out = out.rename(columns={alias: canonical})
-    return out
-
-
-def _year_from_filename(path: Path) -> int:
-    """Extract the survey year from a filename such as pnad_refined_2025.parquet."""
-    match = YEAR_PATTERN.search(path.stem)
-    if match is None:
-        raise ValueError(f"Could not infer a year from filename: {path.name}")
-    return int(match.group(0))
-
-
-def load_database(path: str | Path) -> pd.DataFrame:
-    """Load one database file or a directory of annual refined Parquet records."""
-    database_path = Path(path).expanduser().resolve()
-    if not database_path.exists():
-        raise FileNotFoundError(f"Database not found: {database_path}")
-
-    if database_path.is_dir():
-        files = sorted(database_path.glob("pnad_refined_*.parquet"))
-        if not files:
-            raise FileNotFoundError(
-                f"No pnad_refined_*.parquet files were found in {database_path}."
-            )
-        frames = []
-        for file in files:
-            frame = _normalize_column_names(pd.read_parquet(file))
-            inferred_year = _year_from_filename(file)
-            if "year" not in frame.columns:
-                frame.insert(0, "year", inferred_year)
-            elif not (pd.to_numeric(frame["year"], errors="coerce") == inferred_year).all():
-                raise ValueError(f"Year values in {file.name} disagree with its filename.")
-            frames.append(frame)
-        return pd.concat(frames, ignore_index=True)
-
-    if database_path.suffix.lower() not in SUPPORTED_FILE_SUFFIXES:
-        raise ValueError(
-            f"Unsupported database format '{database_path.suffix}'. "
-            f"Expected one of {sorted(SUPPORTED_FILE_SUFFIXES)}."
-        )
-    return _normalize_column_names(_read_table(database_path))
-
-
-def validate_database(df: pd.DataFrame) -> pd.DataFrame:
-    """Validate and normalize the minimal schema required by the analysis."""
-    out = _normalize_column_names(df)
-    required = {"year", "income"}
-    missing = required.difference(out.columns)
-    if missing:
-        raise ValueError("Database is missing required columns: " + ", ".join(sorted(missing)))
-
-    out["year"] = pd.to_numeric(out["year"], errors="coerce")
-    out["income"] = pd.to_numeric(out["income"], errors="coerce")
-    if out["year"].isna().any():
-        raise ValueError("Column 'year' contains non-numeric or missing values.")
-
-    optional_numeric = [
-        "income_effective", "income_adj", "income_effective_adj",
-        "exchange", "price_index", "inflation_to_2025",
-    ]
-    for column in optional_numeric:
-        if column in out.columns:
-            out[column] = pd.to_numeric(out[column], errors="coerce")
-    out["year"] = out["year"].astype(int)
-    return out.sort_values("year").reset_index(drop=True)
-
-
-def attach_monetary_metadata(
-    df: pd.DataFrame,
-    metadata_path: str | Path = DEFAULT_METADATA_PATH,
-) -> pd.DataFrame:
-    """Attach missing year-level monetary variables from canonical metadata."""
-    out = df.copy()
-    metadata = load_metadata(metadata_path)
-    candidates = ["currency", "exchange", "price_index", "inflation_to_2025"]
-    missing_columns = [column for column in candidates if column not in out.columns]
-    if not missing_columns:
-        return out
-    lookup = metadata[["year", *missing_columns]].copy()
-    return out.merge(lookup, on="year", how="left", validate="many_to_one")
+    @property
+    def ccdf_habitual_effective(self) -> pd.DataFrame:
+        """Compatibility view for habitual versus effective income."""
+        if "income_effective" not in self.panel.columns or self.ccdf.empty:
+            return pd.DataFrame()
+        years = self.panel.loc[self.panel["income_effective"].notna(), "year"].unique()
+        return self.ccdf.loc[
+            self.ccdf["year"].isin(years)
+            & self.ccdf["measure"].isin(["income", "income_effective"])
+        ].reset_index(drop=True)
 
 
 def prepare_panel(config: PipelineConfig) -> pd.DataFrame:
-    """Load, validate, filter, optionally trim, and standardize the panel.
-
-    The optional legacy outlier treatment is deliberately performed on nominal
-    ``income`` before monetary adjustment so that all downstream statistics,
-    CCDFs, Lorenz curves, and figures consume exactly the same treated sample.
-    """
-    panel = validate_database(load_database(config.database_path))
-    panel = attach_monetary_metadata(panel, config.metadata_path)
-
-    if config.start_year is not None:
-        panel = panel.loc[panel["year"] >= int(config.start_year)]
-    if config.end_year is not None:
-        panel = panel.loc[panel["year"] <= int(config.end_year)]
-    if panel.empty:
-        raise ValueError("No observations remain after applying the year filter.")
-
-    panel = apply_manual_outlier_cuts(
-        panel,
-        enabled=config.apply_manual_outlier_cuts,
-        year_col="year",
-        value_col="income",
+    """Prepare the harmonized panel defined by ``config``."""
+    return prepare_data_panel(
+        config.database_path,
+        metadata_path=config.metadata_path,
+        start_year=config.start_year,
+        end_year=config.end_year,
+        apply_outlier_cuts=config.apply_manual_outlier_cuts,
     )
-    if panel.empty:
-        raise ValueError("No observations remain after optional outlier filtering.")
-
-    return adjust_income_to_2025(panel).reset_index(drop=True)
 
 
 def run_pipeline(config: PipelineConfig) -> PipelineResults:
-    """Execute the complete analytical pipeline and return structured outputs."""
+    """Load the panel and compute annual statistics and distribution tables."""
     panel = prepare_panel(config)
     summary = summary_statistics(panel)
-
-    nominal_measures = tuple(c for c in ("income", "income_adj") if c in panel.columns)
-    ccdf_nominal_adjusted = compare_income_measures_ccdf(
-        panel, measures=nominal_measures, base=config.ccdf_base, scale="percent"
+    measures = tuple(
+        column
+        for column in ("income", "income_adj", "income_effective", "income_effective_adj")
+        if column in panel.columns and panel[column].notna().any()
     )
-
-    if "income_effective" in panel.columns and panel["income_effective"].notna().any():
-        effective_panel = panel.loc[panel["income_effective"].notna()].copy()
-        ccdf_habitual_effective = compare_income_measures_ccdf(
-            effective_panel,
-            measures=("income", "income_effective"),
-            base=config.ccdf_base,
-            scale="percent",
-        )
-    else:
-        ccdf_habitual_effective = pd.DataFrame()
-
+    ccdf = compare_income_measures_ccdf(panel, measures=measures, base=config.ccdf_base)
     return PipelineResults(
         panel=panel,
         summary=summary,
-        ccdf_nominal_adjusted=ccdf_nominal_adjusted,
-        ccdf_habitual_effective=ccdf_habitual_effective,
+        ccdf=ccdf,
         manual_outlier_cuts_applied=config.apply_manual_outlier_cuts,
     )
 
 
 def pipeline_overview(results: PipelineResults) -> pd.DataFrame:
-    """Return compact coverage and output diagnostics for an executed pipeline."""
+    """Return compact coverage diagnostics for an executed pipeline."""
     years = results.years
-    panel = results.panel
     effective_years = (
-        panel.loc[panel["income_effective"].notna(), "year"].nunique()
-        if "income_effective" in panel.columns else 0
+        results.panel.loc[results.panel["income_effective"].notna(), "year"].nunique()
+        if "income_effective" in results.panel.columns
+        else 0
     )
-    return pd.DataFrame({
-        "metric": [
-            "observations", "first_year", "last_year", "number_of_years",
-            "years_with_effective_income", "manual_outlier_cuts_applied",
-            "ccdf_rows_nominal_adjusted", "ccdf_rows_habitual_effective",
-        ],
-        "value": [
-            len(panel), min(years), max(years), len(years), int(effective_years),
-            bool(results.manual_outlier_cuts_applied),
-            len(results.ccdf_nominal_adjusted), len(results.ccdf_habitual_effective),
-        ],
-    })
+    return pd.DataFrame(
+        {
+            "metric": [
+                "observations",
+                "first_year",
+                "last_year",
+                "number_of_years",
+                "years_with_effective_income",
+                "manual_outlier_cuts_applied",
+                "ccdf_rows",
+            ],
+            "value": [
+                len(results.panel),
+                min(years),
+                max(years),
+                len(years),
+                int(effective_years),
+                bool(results.manual_outlier_cuts_applied),
+                len(results.ccdf),
+            ],
+        }
+    )
