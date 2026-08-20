@@ -5,5 +5,4 @@ last_year,2025
 number_of_years,45
 years_with_effective_income,0
 manual_outlier_cuts_applied,False
-ccdf_rows_nominal_adjusted,23340
-ccdf_rows_habitual_effective,0
+ccdf_rows,23340
