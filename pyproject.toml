@@ -17,7 +17,9 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0"]
-notebooks = ["jupyter>=1.0"]
+
+[project.scripts]
+pnad-income = "pnad_income.__main__:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
