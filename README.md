@@ -48,18 +48,28 @@ pnad_income/
 
 # Data and sources
 
-- [IBGE — PNAD annual microdata](https://ftp.ibge.gov.br/Trabalho_e_Rendimento/Pesquisa_Nacional_por_Amostra_de_Domicilios_anual/microdados/) — historical annual PNAD household microdata through 2015.
-- [IBGE — PNAD Contínua quarterly microdata](https://ftp.ibge.gov.br/Trabalho_e_Rendimento/Pesquisa_Nacional_por_Amostra_de_Domicilios_continua/Trimestral/Microdados/) — household microdata used to extend the series from 2016 onward.
-- [Banco Central do Brasil — historical exchange rates](https://www.bcb.gov.br/estabilidadefinanceira/historicocotacoes) — historical foreign-exchange information used in cross-year monetary harmonization.
-- [Banco Central do Brasil — open exchange-rate dataset](https://dadosabertos.bcb.gov.br/dataset/taxas-de-cambio-todos-os-boletins-diarios) — open exchange-rate data used to reproduce recent conversion factors.
-- [BLS / FRED — CPIAUCSL](https://fred.stlouisfed.org/series/CPIAUCSL) — U.S. CPI series used for the project-level adjustment to September 2025 dollars.
-- [`data/metadata/pnad_metadata.csv`](data/metadata/pnad_metadata.csv) — project metadata with survey fields, fixed-width positions when applicable, missing-value codes, currencies, exchange factors, inflation factors, and source URLs for each year.
+The longitudinal series combines IBGE household microdata with exchange-rate and inflation series used for monetary harmonization, together with year-specific project metadata that records extraction fields, missing-value codes, currencies, monetary factors, and provenance.
+
+| Source | Coverage / use | Reference |
+|---|---|---|
+| IBGE — PNAD annual | Historical household microdata through 2015. | [PNAD annual microdata](https://ftp.ibge.gov.br/Trabalho_e_Rendimento/Pesquisa_Nacional_por_Amostra_de_Domicilios_anual/microdados/) |
+| IBGE — PNAD Contínua | Household microdata used to extend the series from 2016 onward. | [PNAD Contínua quarterly microdata](https://ftp.ibge.gov.br/Trabalho_e_Rendimento/Pesquisa_Nacional_por_Amostra_de_Domicilios_continua/Trimestral/Microdados/) |
+| Banco Central do Brasil | Historical foreign-exchange information used in cross-year monetary harmonization. | [Historical exchange rates](https://www.bcb.gov.br/estabilidadefinanceira/historicocotacoes) |
+| Banco Central do Brasil | Open exchange-rate data used to reproduce recent conversion factors. | [Open exchange-rate dataset](https://dadosabertos.bcb.gov.br/dataset/taxas-de-cambio-todos-os-boletins-diarios) |
+| BLS / FRED | CPIAUCSL used for the project-level adjustment to September 2025 dollars. | [CPIAUCSL](https://fred.stlouisfed.org/series/CPIAUCSL) |
+| Project metadata | Annual extraction fields, fixed-width positions when applicable, missing-value codes, currencies, exchange factors, inflation factors, and source URLs. | [`pnad_metadata.csv`](data/metadata/pnad_metadata.csv) |
 
 # Outputs and auditability
 
-Generated products use a shallow structure. [`outputs/figures/`](outputs/figures/) and [`outputs/tables/`](outputs/tables/) contain all artifacts, while filename prefixes carry the analytical role. Files beginning with `eda_` document refined-versus-trusted diagnostics, cleaning thresholds, histograms, boxplots, upper-tail behavior, frequencies, and audit counts. Files beginning with `paper_` are produced only from trusted data and contain the distributional and inequality results intended for scientific interpretation.
+Generated products use a shallow structure under [`outputs/figures/`](outputs/figures/) and [`outputs/tables/`](outputs/tables/). Filename prefixes encode analytical purpose: `eda_` documents diagnostics for the `refined → trusted` transformation, while `paper_` contains scientific outputs computed only from trusted data.
 
-Examples include `eda_refined_histogram_income_page_01.png`, `eda_trusted_boxplot_income_page_01.png`, `eda_compare_outlier_income_upper_tail_refined_trusted.png`, `paper_ccdf_income_gompertz_page_01.png`, and `paper_annual_inequality_indices.csv`. [`outputs/manifest.csv`](outputs/manifest.csv) records the generated artifacts.
+| Location | Prefix | Purpose | Representative artifacts |
+|---|---|---|---|
+| [`outputs/figures/`](outputs/figures/) | `eda_` | Histograms, boxplots, upper-tail diagnostics, and refined-versus-trusted visual comparisons. | `eda_refined_histogram_income_page_01.png`, `eda_trusted_boxplot_income_page_01.png`, `eda_compare_outlier_income_upper_tail_refined_trusted.png` |
+| [`outputs/tables/`](outputs/tables/) | `eda_` | Cleaning diagnostics, thresholds, frequencies, and descriptive statistics. | `eda_cleaning_audit.csv`, `eda_cleaning_thresholds.csv`, `eda_refined_descriptive_statistics.csv` |
+| [`outputs/figures/`](outputs/figures/) | `paper_` | Distributional and inequality figures computed from trusted data. | `paper_ccdf_income_gompertz_page_01.png`, `paper_inequality_gini_all_years.png` |
+| [`outputs/tables/`](outputs/tables/) | `paper_` | Scientific summary, CCDF, and inequality tables computed from trusted data. | `paper_annual_summary.csv`, `paper_annual_inequality_indices.csv`, `paper_ccdf_income_nominal_adjusted.parquet` |
+| [`outputs/manifest.csv`](outputs/manifest.csv) | — | Inventory of generated analysis artifacts. | Complete output manifest. |
 
 # Reproducibility
 
