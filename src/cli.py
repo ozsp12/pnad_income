@@ -34,18 +34,6 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--regime-min-tail-fraction", type=float, default=0.005)
     parser.add_argument("--regime-cutoff-quantile-min", type=float, default=0.20)
     parser.add_argument("--regime-cutoff-quantile-max", type=float, default=0.995)
-    parser.add_argument(
-        "--regime-selection-criterion",
-        choices=("log_likelihood", "aic", "bic"),
-        default="log_likelihood",
-        help="Criterion for the annual normalized piecewise-likelihood cutoff profile.",
-    )
-    parser.add_argument(
-        "--regime-gompertz-intercept-mode",
-        choices=("fixed", "free"),
-        default="fixed",
-        help="Fix A=ln(ln 100) (recommended) or run the explicitly approximate free-A diagnostic.",
-    )
     parser.add_argument("--histogram-bins", type=int, default=100)
     parser.add_argument(
         "--plot-columns",
@@ -104,8 +92,6 @@ def main() -> None:
         regime_min_tail_fraction=args.regime_min_tail_fraction,
         regime_cutoff_quantile_min=args.regime_cutoff_quantile_min,
         regime_cutoff_quantile_max=args.regime_cutoff_quantile_max,
-        regime_selection_criterion=args.regime_selection_criterion,
-        regime_gompertz_intercept_mode=args.regime_gompertz_intercept_mode,
     )
     results = run_pipeline(config)
     gini_references = load_gini_reference(args.gini_references)

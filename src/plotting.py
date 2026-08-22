@@ -292,7 +292,7 @@ def plot_distribution_regime_fits(
                 body["gompertz_fitted_transform"],
                 color="#E17C05",
                 linewidth=1.8,
-                label="Gompertz fit",
+                label="Gompertz LS",
             )
             left.axvline(cutoff, color="#3F3F3F", linestyle="--", linewidth=1.1, label="Cutoff")
             left.set(
@@ -318,7 +318,7 @@ def plot_distribution_regime_fits(
                 tail["pareto_fitted_ccdf_percent"],
                 color="#E17C05",
                 linewidth=1.8,
-                label="Pareto MLE",
+                label="Pareto LS",
             )
             right.axvline(cutoff, color="#3F3F3F", linestyle="--", linewidth=1.1, label="Cutoff")
             right.set(
@@ -460,11 +460,15 @@ def plot_regime_r2_history(fits: pd.DataFrame, figsize=(11, 5.5)):
             label=f"{label} mean ({mean:.3f})",
         )
 
+    finite_r2 = frame[["gompertz_r2", "pareto_r2"]].to_numpy(float)
+    finite_r2 = finite_r2[np.isfinite(finite_r2)]
+    minimum_r2 = float(finite_r2.min())
+    lower_limit = 0.0 if minimum_r2 >= 0 else minimum_r2 - 0.05 * (1.0 - minimum_r2)
     ax.set(
         xlabel="Year",
         ylabel="Coefficient of determination (R²)",
         title="Gompertz and Pareto regression R²",
-        ylim=(0, 1),
+        ylim=(lower_limit, 1),
     )
     ax.grid(True, alpha=0.25)
     ax.legend(frameon=False, ncol=2)

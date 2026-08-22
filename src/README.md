@@ -69,91 +69,17 @@ The calculated PNAD Gini series is plotted together with the IPEA and World Bank
 
 ## Gompertz-Pareto regime analysis
 
-The annual regime analysis uses only positive, finite `income_adj` observations from the trusted layer. Each year is normalized before estimation,
+The annual fit uses positive, finite trusted `income_adj`, normalized as $x_i=\texttt{income\_adj}_i/\overline{\texttt{income\_adj}}$, and the percent CCDF $F(x)=100P(X\ge x)$. The body model is
 
 $$
-x_i=\frac{\texttt{income\_adj}_i}{\overline{\texttt{income\_adj}}},
+G(x)=\exp[\exp(A-Bx)],\qquad A=\ln[\ln(100)].
 $$
 
-so the structural parameters and transition can be compared on a currency-free scale. The asset also retains the annual mean and maps the selected cutoff back to adjusted 2025 USD.
+For each candidate cutoff, $B>0$ is estimated by least squares in $\ln[\ln F(x)]=A-Bx$ with fixed $A$. The tail model is $P(x)=\beta x^{-\alpha}$; $\alpha>0$ is estimated by least squares in $\ln F$ with continuity imposed through $\beta=G(x_t)x_t^\alpha$.
 
-The empirical complementary cumulative distribution is expressed in percent,
+The selected cutoff minimizes `joint_sse` on one response scale: squared residuals in $\ln F$ from $\ln G(x)=\exp(A-Bx)$ in the body plus squared residuals from $\ln P(x)=\ln\beta-\alpha\ln x$ in the tail. The search retains the existing observation, curve-point, quantile, boundary, flat-profile, weak-identification, and p20/p40/p60 sensitivity checks. Gompertz and Pareto R², RMSE, and SSE are diagnostics in their respective fitting spaces.
 
-$$
-F(x)=100\,\frac{\#(X\ge x)}{N}.
-$$
-
-The Gompertz body follows
-
-$$
-G(x)=\exp\{\exp(A-Bx)\},\qquad \ln[\ln G(x)]=A-Bx,
-$$
-
-with $B>0$. The boundary condition $G(0)=100$ fixes
-
-$$
-A_0=\ln[\ln(100)]=1.5271796258\ldots.
-$$
-
-`gompertz_intercept_mode="fixed"` is therefore the default and scientifically recommended mode. A free-$A$ mode is implemented for comparison with unconstrained linear diagnostics, and the fixed-mode asset always reports the corresponding free-$A$ diagnostic. Because free $A$ does not enforce $F(0)=100$, that alternative is explicitly labeled `free_A_unnormalized_quasi_likelihood` and must not be interpreted as a normalized probability model.
-
-For $x\ge x_t$, the Pareto CCDF is
-
-$$
-P(x)=\beta x^{-\alpha},\qquad
-\widehat{\alpha}=\frac{n_{tail}}{\sum_i\ln(x_i/x_t)}.
-$$
-
-Thus `pareto_alpha` is the CCDF exponent and the density exponent is stored separately as `pareto_density_exponent = pareto_alpha + 1`. Because the model is fitted to income normalized by its annual mean, admissible candidates must satisfy $\alpha>1$ so the Pareto component has a finite first moment. Continuity is imposed rather than estimated independently:
-
-$$
-\beta=G(x_t)x_t^{\alpha}.
-$$
-
-`continuity_error` records the numerical difference between the two fitted CCDF branches at $x_t$ and should be zero up to floating-point precision.
-
-In fixed-$A$ mode, each candidate cutoff is scored with the proper individual-observation likelihood of the continuous piecewise density. The body density is $B\exp(A-Bx)G(x)/100$ and the tail density is $\alpha\beta x^{-(\alpha+1)}/100$. Their masses sum to one because $A=A_0$ and continuity is enforced. $B$ is profiled as a positive parameter, $\alpha$ uses the Pareto MLE above, and the default selection maximizes joint log-likelihood; joint AIC and BIC are also persisted. No residual vectors from different transformed coordinates are concatenated. Pareto KS is an independent post-fit diagnostic.
-
-The default cutoff search spans empirical cumulative quantiles p20 through p99.5, with at least 100 observations in each regime and at least 0.5% of observations in the tail. The broad interval is intentional: a boundary solution is evidence against a precisely located interior transition, not a successful interior fit. `fit_status` is one of `ok_interior`, `boundary_lower`, `boundary_upper`, `flat_profile`, `weakly_identified`, or `no_valid_fit`; `failure_reason` gives details for invalid fits. The asset includes the second-best cutoff, its log-likelihood difference, a discrete 95% likelihood-ratio profile interval, and restricted-search sensitivities with lower bounds p20, p40, and p60. Wide profiles or material cutoff sensitivity are labeled `weakly_identified`.
-
-These conventions follow the primary Brazilian-income studies [Moura Jr. and Ribeiro (2009)](https://arxiv.org/abs/0812.2664) and [Figueira, Moura Jr. and Ribeiro (2011)](https://arxiv.org/abs/1010.1994). Direct numerical agreement is not assumed: this repository uses its own trusted-data treatment, adjusted-income definition, geometric CCDF grid, positive-record restriction, and record weighting.
-
-### Derived-data interface for regime figures
-
-The estimator writes two public analytical assets:
-
-- `paper_distribution_regime_fits.csv` contains one row per survey year with the annual normalization, normalized and 2025-USD cutoffs, sample allocation, both Gompertz intercept diagnostics, positive $B$, Pareto CCDF and density exponents, continuity, R²/RMSE/KS, likelihood/AIC/BIC, profile-identification diagnostics, sensitivities, and status.
-- `paper_distribution_regime_curves.parquet` contains the normalized and 2025-USD axes, empirical percent CCDF, correct Gompertz and log-log transforms, regime label, both cutoffs, and fitted branches.
-
-`outputs.py` persists these datasets and reloads them before creating any regime figure. The plotting functions accept only the reloaded frames: they neither read `data/trusted/` nor `data/refined/`, access `PipelineResults.panel`, reconstruct a CCDF, rerun MLE, or search for a cutoff. The asset-to-figure column contract is:
-
-| Figure family | Fit columns | Curve columns |
-|---|---|---|
-| Annual dual-panel regime fits | `year`, `cutoff_normalized`, `cutoff_income_adj`, `pareto_alpha`, `fit_status` | `year`, `income_normalized`, `empirical_ccdf_percent`, `gompertz_transform`, `regime`, `gompertz_fitted_transform`, `pareto_fitted_ccdf_percent` |
-| Gompertz B history | `year`, `gompertz_B`, `fit_status` | None |
-| Pareto alpha history | `year`, `pareto_alpha`, `fit_status` | None |
-| Cutoff history | `year`, `cutoff_normalized`, `fit_status` | None |
-| Gompertz and Pareto R² history | `year`, `gompertz_r2`, `pareto_r2`, `fit_status` | None |
-
-The strict flow is therefore:
-
-```text
-data/trusted/
-      │
-      ▼
-regime_analysis.py  (one estimation pass)
-      │
-      ├── paper_distribution_regime_fits.csv
-      └── paper_distribution_regime_curves.parquet
-                       │
-                       ▼
-                  plotting.py
-                       │
-                       ▼
-                     PNGs
-```
-
-The dual-panel figures use the persisted normalized axis: $x$ versus $\ln[\ln F(x)]$ for the Gompertz body and log $x$ versus log percent CCDF for the Pareto tail. Current estimators are record-weighted. Population inference requires the appropriate PNAD survey weights and design information; the present implementation should therefore be interpreted as analysis of harmonized records rather than a survey-design-corrected population estimator.
+`paper_distribution_regime_fits.csv` stores one compact LS result per year. `paper_distribution_regime_curves.parquet` stores the empirical and fitted branches needed by every regime figure. `outputs.py` reloads these two assets before plotting; regime figures do not access or re-estimate microdata. Fits are record-weighted rather than survey-design-corrected.
 
 ## Analytical flow
 

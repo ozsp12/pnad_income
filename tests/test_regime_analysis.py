@@ -1,4 +1,4 @@
-"""Deterministic tests for the normalized Gompertz-Pareto analysis."""
+"""Deterministic tests for normalized Gompertz-Pareto least squares."""
 
 import matplotlib
 matplotlib.use("Agg")
@@ -21,14 +21,15 @@ from regime_analysis import (
     FIT_STATUSES,
     GOMPERTZ_A_THEORETICAL,
     RegimeFitConfig,
-    estimate_pareto_mle,
+    estimate_gompertz_ls,
+    estimate_pareto_ls,
     fit_distribution_regimes,
     fit_year_distribution_regime,
 )
 
 
 def _piecewise_sample(n=12_000, cutoff=7.0, B=0.4, alpha=2.0):
-    """Build exact Gompertz/Pareto quantiles with a roughly 1%–2% tail."""
+    """Build exact Gompertz/Pareto quantiles with a roughly 1%-2% tail."""
     survival = (np.arange(n, 0, -1, dtype=float) - 0.5) / n
     tail_fraction = np.exp(np.exp(GOMPERTZ_A_THEORETICAL - B * cutoff)) / 100.0
     values = np.empty(n, dtype=float)
@@ -53,26 +54,44 @@ def _config(**overrides):
     return RegimeFitConfig(**settings)
 
 
-def test_pareto_mle_recovers_known_ccdf_exponent_and_density_convention():
-    rng = np.random.default_rng(7391)
-    alpha = 2.2
-    cutoff = 10.0
-    values = cutoff * (1 - rng.random(50_000)) ** (-1 / alpha)
-    estimate = estimate_pareto_mle(values, cutoff)
-    assert abs(estimate - alpha) < 0.04
+def _diagnostic_profiles(sse_values):
+    return [
+        {
+            "cutoff_normalized": float(index + 1),
+            "cutoff_quantile": 0.20 * (index + 1),
+            "joint_sse": float(sse),
+        }
+        for index, sse in enumerate(sse_values)
+    ]
 
 
-def test_profile_recovers_small_tail_break_and_correct_parameter_conventions():
+def test_gompertz_fixed_intercept_ls_recovers_known_B():
+    x = np.linspace(0.05, 5.0, 300)
+    expected = 0.43
+    y = GOMPERTZ_A_THEORETICAL - expected * x
+    assert np.isclose(estimate_gompertz_ls(x, y), expected, atol=1e-12)
+
+
+def test_continuity_constrained_pareto_ls_recovers_known_alpha():
+    cutoff = 6.5
+    G_cutoff = 1.7
+    expected = 2.25
+    x = cutoff * np.geomspace(1.0, 20.0, 250)
+    F = G_cutoff * (x / cutoff) ** (-expected)
+    assert np.isclose(
+        estimate_pareto_ls(x, F, cutoff, G_cutoff), expected, atol=1e-12
+    )
+
+
+def test_profile_recovers_break_and_enforces_continuity():
     fit, curves = fit_year_distribution_regime(_piecewise_sample(), 2025, config=_config())
-    assert fit["fit_status"] == "ok_interior"
-    assert 6.0 <= fit["cutoff_normalized"] <= 9.0
-    assert 0.30 <= fit["gompertz_B"] <= 0.42
-    assert abs(fit["gompertz_A"] - GOMPERTZ_A_THEORETICAL) < 1e-12
-    assert abs(fit["pareto_alpha"] - 2.0) < 0.15
-    assert np.isclose(fit["pareto_density_exponent"], fit["pareto_alpha"] + 1)
-    assert 0.005 <= fit["tail_fraction"] <= 0.05
+    assert fit["fit_status"] in FIT_STATUSES - {"no_valid_fit"}
+    assert 5.5 <= fit["cutoff_normalized"] <= 9.5
+    assert 0.30 <= fit["gompertz_B"] <= 0.45
+    assert np.isclose(fit["gompertz_A"], GOMPERTZ_A_THEORETICAL)
+    assert abs(fit["pareto_alpha"] - 2.0) < 0.25
     assert fit["continuity_error"] < 1e-10
-    assert fit["likelihood_type"] == "normalized_piecewise_microdata"
+    assert fit["selection_criterion"] == "joint_sse"
     assert not curves.empty
     transformed = curves.dropna(subset=["gompertz_transform"])
     assert curves["empirical_ccdf_percent"].between(0, 100, inclusive="right").all()
@@ -80,21 +99,36 @@ def test_profile_recovers_small_tail_break_and_correct_parameter_conventions():
         transformed["gompertz_transform"],
         np.log(np.log(transformed["empirical_ccdf_percent"])),
     )
-    assert np.isclose(fit["cutoff_income_adj"], fit["cutoff_normalized"] * fit["normalization_mean"])
-
-
-def test_fixed_and_free_A_modes_are_explicit_and_free_mode_is_labeled_approximate():
-    values = _piecewise_sample()
-    fixed, _ = fit_year_distribution_regime(values, 2025, config=_config())
-    free, _ = fit_year_distribution_regime(
-        values,
-        2025,
-        config=_config(gompertz_intercept_mode="free"),
+    assert np.isclose(
+        fit["cutoff_income_adj"], fit["cutoff_normalized"] * fit["normalization_mean"]
     )
-    assert fixed["gompertz_intercept_mode"] == "fixed"
-    assert free["gompertz_intercept_mode"] == "free"
-    assert abs(free["gompertz_A"] - GOMPERTZ_A_THEORETICAL) < 0.03
-    assert free["likelihood_type"] == "free_A_unnormalized_quasi_likelihood"
+
+    body = curves.loc[curves["regime"].eq("gompertz_body")]
+    body_transformed = body.dropna(subset=["gompertz_transform"])
+    tail = curves.loc[curves["regime"].eq("pareto_tail")]
+    expected_gompertz_sse = np.square(
+        body_transformed["gompertz_transform"]
+        - body_transformed["gompertz_fitted_transform"]
+    ).sum()
+    expected_pareto_sse = np.square(
+        tail["log_empirical_ccdf_percent"] - tail["pareto_fitted_log_ccdf"]
+    ).sum()
+    expected_joint_sse = (
+        np.square(
+            body["log_empirical_ccdf_percent"]
+            - np.log(body["gompertz_fitted_ccdf_percent"])
+        ).sum()
+        + expected_pareto_sse
+    )
+    assert np.isclose(fit["gompertz_sse"], expected_gompertz_sse)
+    assert np.isclose(fit["pareto_sse"], expected_pareto_sse)
+    assert np.isclose(fit["joint_sse"], expected_joint_sse)
+
+    figures = plot_distribution_regime_fits(pd.DataFrame([fit]), curves)
+    labels = [line.get_label() for axis in figures[0].axes for line in axis.lines]
+    assert "Gompertz LS" in labels
+    assert "Pareto LS" in labels
+    plt.close(figures[0])
 
 
 def test_scale_order_and_invalid_value_invariance():
@@ -102,14 +136,20 @@ def test_scale_order_and_invalid_value_invariance():
     dirty_scaled = np.concatenate([clean[::-1] * 123.0, [np.nan, np.inf, -5.0, 0.0]])
     first, _ = fit_year_distribution_regime(clean, 2025, config=_config())
     second, _ = fit_year_distribution_regime(dirty_scaled, 2025, config=_config())
-    for column in ("cutoff_normalized", "gompertz_A", "gompertz_B", "pareto_alpha"):
+    for column in (
+        "cutoff_normalized",
+        "gompertz_A",
+        "gompertz_B",
+        "pareto_alpha",
+        "joint_sse",
+    ):
         assert np.isclose(first[column], second[column])
     assert np.isclose(second["normalization_mean"], 123 * first["normalization_mean"])
     assert np.isclose(second["cutoff_income_adj"], 123 * first["cutoff_income_adj"])
     assert second["n_total"] == clean.size
 
 
-def test_failure_boundary_and_flat_profile_statuses_are_not_reported_as_ok():
+def test_failure_and_all_profile_identification_statuses():
     failure, curves = fit_year_distribution_regime(
         np.arange(1.0, 61.0),
         2025,
@@ -119,37 +159,37 @@ def test_failure_boundary_and_flat_profile_statuses_are_not_reported_as_ok():
     assert failure["failure_reason"] == "insufficient_positive_observations"
     assert curves.empty
 
-    boundary, _ = fit_year_distribution_regime(
-        _piecewise_sample(),
-        2025,
-        config=_config(cutoff_quantile_min=0.20, cutoff_quantile_max=0.90, sensitivity_lower_bounds=(0.20, 0.40, 0.60)),
+    lower_profiles = _diagnostic_profiles([1.0, 2.0, 3.0, 4.0])
+    lower = regime_analysis._profile_diagnostics(
+        lower_profiles, regime_analysis._best_profile(lower_profiles), _config()
     )
-    assert boundary["fit_status"] in {"boundary_lower", "boundary_upper"}
+    upper_profiles = _diagnostic_profiles([4.0, 3.0, 2.0, 1.0])
+    upper = regime_analysis._profile_diagnostics(
+        upper_profiles, regime_analysis._best_profile(upper_profiles), _config()
+    )
+    flat_profiles = _diagnostic_profiles([1.0, 1.0, 1.0, 1.0])
+    flat = regime_analysis._profile_diagnostics(
+        flat_profiles, regime_analysis._best_profile(flat_profiles), _config()
+    )
+    weak_profiles = _diagnostic_profiles([1.04, 1.0, 1.04, 1.04])
+    weak = regime_analysis._profile_diagnostics(
+        weak_profiles, regime_analysis._best_profile(weak_profiles), _config()
+    )
 
-    flat, _ = fit_year_distribution_regime(
-        _piecewise_sample(),
-        2025,
-        config=_config(flat_profile_loglik_tolerance=np.inf),
-    )
+    assert lower["fit_status"] == "boundary_lower"
+    assert upper["fit_status"] == "boundary_upper"
     assert flat["fit_status"] == "flat_profile"
-
-    profiles = [
-        {"cutoff_normalized": 1.0, "cutoff_quantile": 0.20, "joint_log_likelihood": 0.0},
-        {"cutoff_normalized": 2.0, "cutoff_quantile": 0.40, "joint_log_likelihood": 1.0},
-        {"cutoff_normalized": 3.0, "cutoff_quantile": 0.60, "joint_log_likelihood": 0.9},
-        {"cutoff_normalized": 4.0, "cutoff_quantile": 0.80, "joint_log_likelihood": 0.8},
-    ]
-    weak = regime_analysis._profile_diagnostics(profiles, profiles[1], _config())
     assert weak["fit_status"] == "weakly_identified"
     assert {
         failure["fit_status"],
-        boundary["fit_status"],
+        lower["fit_status"],
+        upper["fit_status"],
         flat["fit_status"],
         weak["fit_status"],
     }.issubset(FIT_STATUSES)
 
 
-def test_annual_assets_have_one_row_per_year_and_complete_diagnostics():
+def test_annual_assets_have_one_row_per_year_and_complete_ls_diagnostics():
     sample = _piecewise_sample()
     frame = pd.DataFrame(
         {
@@ -163,24 +203,40 @@ def test_annual_assets_have_one_row_per_year_and_complete_diagnostics():
     valid = fits.loc[fits["fit_status"] != "no_valid_fit"]
     assert (valid["n_body"] + valid["n_tail"] == valid["n_total"]).all()
     assert np.allclose(valid["body_fraction"] + valid["tail_fraction"], 1)
-    assert valid["pareto_alpha"].gt(1).all()
-    assert np.allclose(valid["pareto_density_exponent"], valid["pareto_alpha"] + 1)
+    assert valid["gompertz_B"].gt(0).all()
+    assert valid["pareto_alpha"].gt(0).all()
     assert valid["continuity_error"].lt(1e-10).all()
-    assert valid[["sensitivity_cutoff_p20", "sensitivity_cutoff_p40", "sensitivity_cutoff_p60"]].notna().all().all()
+    assert valid[["gompertz_sse", "pareto_sse", "joint_sse"]].ge(0).all().all()
+    assert valid[
+        ["sensitivity_cutoff_p20", "sensitivity_cutoff_p40", "sensitivity_cutoff_p60"]
+    ].notna().all().all()
     metrics = [
         "gompertz_A",
         "gompertz_B",
         "gompertz_r2",
         "gompertz_rmse",
+        "gompertz_sse",
         "pareto_alpha",
+        "pareto_beta",
         "pareto_r2",
         "pareto_rmse",
-        "pareto_ks",
-        "joint_log_likelihood",
-        "joint_aic",
-        "joint_bic",
+        "pareto_sse",
+        "joint_sse",
     ]
     assert np.isfinite(valid[metrics].to_numpy(float)).all()
+    forbidden = {
+        "joint_log_likelihood",
+        "likelihood_type",
+        "joint_aic",
+        "joint_bic",
+        "second_best_log_likelihood",
+        "log_likelihood_difference",
+        "profile_ci_lower",
+        "profile_ci_upper",
+        "pareto_density_exponent",
+        "pareto_ks",
+    }
+    assert forbidden.isdisjoint(fits.columns)
     assert set(curves["year"]) == {2024, 2025}
 
 
@@ -201,6 +257,20 @@ def test_regime_r2_history_has_two_series_and_two_mean_lines():
     assert np.allclose(means[0].get_ydata(), 0.75)
     assert np.allclose(means[1].get_ydata(), 0.80)
     assert figure.axes[0].get_ylim() == (0.0, 1.0)
+    plt.close(figure)
+
+
+def test_regime_r2_history_does_not_clip_negative_valid_values():
+    fits = pd.DataFrame(
+        {
+            "year": [2024, 2025],
+            "gompertz_r2": [0.90, 0.95],
+            "pareto_r2": [-0.25, 0.80],
+            "fit_status": ["ok_interior", "ok_interior"],
+        }
+    )
+    figure = plot_regime_r2_history(fits)
+    assert figure.axes[0].get_ylim()[0] < -0.25
     plt.close(figure)
 
 

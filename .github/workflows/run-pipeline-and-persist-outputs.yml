@@ -74,8 +74,6 @@ jobs:
             --regime-min-tail-fraction 0.005 \
             --regime-cutoff-quantile-min 0.20 \
             --regime-cutoff-quantile-max 0.995 \
-            --regime-selection-criterion log_likelihood \
-            --regime-gompertz-intercept-mode fixed \
             --histogram-bins 100 \
             --plot-columns 3 \
             --outlier-method log_mad \
@@ -177,12 +175,10 @@ jobs:
           required_fit_columns = {
               'year', 'normalization_mean', 'cutoff_normalized', 'cutoff_income_adj',
               'cutoff_quantile', 'n_total', 'n_body', 'n_tail', 'body_fraction', 'tail_fraction',
-              'gompertz_intercept_mode', 'gompertz_A', 'gompertz_A_theoretical',
-              'gompertz_A_free_diagnostic', 'gompertz_B', 'gompertz_r2', 'gompertz_rmse',
-              'pareto_alpha', 'pareto_density_exponent', 'pareto_beta', 'pareto_r2',
-              'pareto_rmse', 'pareto_ks', 'continuity_error', 'joint_log_likelihood',
-              'joint_aic', 'joint_bic', 'likelihood_type', 'second_best_cutoff_normalized',
-              'log_likelihood_difference', 'profile_ci_lower', 'profile_ci_upper',
+              'gompertz_A', 'gompertz_B', 'gompertz_r2', 'gompertz_rmse', 'gompertz_sse',
+              'pareto_alpha', 'pareto_beta', 'pareto_r2', 'pareto_rmse', 'pareto_sse',
+              'joint_sse', 'continuity_error', 'second_best_cutoff_normalized',
+              'second_best_joint_sse', 'joint_sse_gap',
               'sensitivity_cutoff_p20', 'sensitivity_cutoff_p40', 'sensitivity_cutoff_p60',
               'candidate_count', 'selection_criterion', 'fit_status', 'failure_reason',
           }
@@ -211,8 +207,9 @@ jobs:
           regime_math_ok = bool(
               not valid_rows.empty
               and valid_rows['gompertz_B'].gt(0).all()
-              and valid_rows['pareto_alpha'].gt(1).all()
-              and valid_rows['pareto_density_exponent'].sub(valid_rows['pareto_alpha']).sub(1).abs().lt(1e-10).all()
+              and valid_rows['pareto_alpha'].gt(0).all()
+              and valid_rows[['gompertz_sse', 'pareto_sse', 'joint_sse']].ge(0).all().all()
+              and valid_rows['selection_criterion'].eq('joint_sse').all()
               and valid_rows['continuity_error'].abs().lt(1e-10).all()
           )
 
