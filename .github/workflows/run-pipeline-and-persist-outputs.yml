@@ -123,6 +123,7 @@ jobs:
               output_root / 'figures/paper_gompertz_parameter_B_all_years.png',
               output_root / 'figures/paper_pareto_alpha_all_years.png',
               output_root / 'figures/paper_distribution_cutoff_all_years.png',
+              output_root / 'figures/paper_distribution_regime_r2_all_years.png',
           ]
           missing = [str(path) for path in required if not path.exists()]
           figures = list((output_root / 'figures').glob('*.png'))

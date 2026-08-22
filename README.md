@@ -67,7 +67,7 @@ Generated products use a shallow structure under [`outputs/figures/`](outputs/fi
 
 | Location | Purpose | Representative artifacts |
 |---|---|---|
-| [`outputs/figures/`](outputs/figures/) | EDA histograms, boxplots, upper-tail diagnostics, refined-versus-trusted comparisons, and scientific distributional or inequality figures. | `eda_refined_histogram_income_page_01.png`, `paper_lorenz_income_annotated_g_p_k_z_page_01.png`, `paper_distribution_regime_fit_page_01.png`, `paper_pareto_alpha_all_years.png` |
+| [`outputs/figures/`](outputs/figures/) | EDA histograms, boxplots, upper-tail diagnostics, refined-versus-trusted comparisons, and scientific distributional or inequality figures. | `eda_refined_histogram_income_page_01.png`, `paper_lorenz_income_annotated_g_p_k_z_page_01.png`, `paper_distribution_regime_fit_page_01.png`, `paper_distribution_regime_r2_all_years.png` |
 | [`outputs/tables/`](outputs/tables/) | Cleaning diagnostics, thresholds, frequencies, descriptive statistics, and scientific summary, CCDF, inequality, income-group, external-validation, and regime-fit datasets. | `eda_cleaning_audit.csv`, `paper_annual_inequality_indices.csv`, `paper_distribution_regime_fits.csv`, `paper_distribution_regime_curves.parquet` |
 | [`outputs/manifest.csv`](outputs/manifest.csv) | Inventory of generated analysis artifacts. | Complete output manifest. |
 

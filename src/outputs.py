@@ -45,6 +45,7 @@ from plotting import (
     plot_pareto_alpha_history,
     plot_pietra_kolkata_bound,
     plot_primary_indices,
+    plot_regime_r2_history,
     plot_top_income_shares,
     plot_zanardi,
 )
@@ -172,6 +173,9 @@ ARTIFACT_DESCRIPTIONS = {
     ),
     "paper_distribution_cutoff_all_years.png": (
         "Annual income cutoff in 2025 USD separating the selected Gompertz body and Pareto tail regimes."
+    ),
+    "paper_distribution_regime_r2_all_years.png": (
+        "Annual Gompertz-body and Pareto-tail regression R-squared values with model-specific mean reference lines."
     ),
     "eda_refined_outlier_income_upper_tail_all_years.png": (
         "Upper-tail income diagnostic for all refined survey years before trusted-layer cleaning."
@@ -525,6 +529,7 @@ def export_analysis_outputs(
         "paper_gompertz_parameter_B_all_years.png": plot_gompertz_parameter_history(persisted_regime_fits),
         "paper_pareto_alpha_all_years.png": plot_pareto_alpha_history(persisted_regime_fits),
         "paper_distribution_cutoff_all_years.png": plot_distribution_cutoff_history(persisted_regime_fits),
+        "paper_distribution_regime_r2_all_years.png": plot_regime_r2_history(persisted_regime_fits),
     }
     if gini_references is not None and not gini_references.empty:
         scalar_figures["paper_gini_external_validation.png"] = plot_gini_validation(results.summary, gini_references)

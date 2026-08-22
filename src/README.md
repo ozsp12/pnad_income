@@ -104,6 +104,7 @@ The estimator writes two public analytical assets:
 | Gompertz B history | `year`, `gompertz_B`, `fit_status` | None |
 | Pareto alpha history | `year`, `pareto_alpha_mle`, `fit_status` | None |
 | Cutoff history | `year`, `cutoff`, `fit_status` | None |
+| Gompertz and Pareto R² history | `year`, `gompertz_r2`, `pareto_r2`, `fit_status` | None |
 
 The strict flow is therefore:
 
