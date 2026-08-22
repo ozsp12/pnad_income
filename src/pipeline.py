@@ -23,10 +23,11 @@ class PipelineConfig:
     end_year: int | None = None
     regime_min_body_observations: int = 100
     regime_min_tail_observations: int = 100
-    regime_min_tail_fraction: float = 0.01
-    regime_cutoff_quantile_min: float = 0.80
-    regime_cutoff_quantile_max: float = 0.99
-    regime_selection_criterion: str = "bic"
+    regime_min_tail_fraction: float = 0.005
+    regime_cutoff_quantile_min: float = 0.20
+    regime_cutoff_quantile_max: float = 0.995
+    regime_selection_criterion: str = "log_likelihood"
+    regime_gompertz_intercept_mode: str = "fixed"
 
 
 @dataclass
@@ -91,6 +92,7 @@ def run_pipeline(config: PipelineConfig) -> PipelineResults:
         cutoff_quantile_min=config.regime_cutoff_quantile_min,
         cutoff_quantile_max=config.regime_cutoff_quantile_max,
         selection_criterion=config.regime_selection_criterion,
+        gompertz_intercept_mode=config.regime_gompertz_intercept_mode,
     )
     regime_fits, regime_curves = fit_distribution_regimes(
         panel,
@@ -136,7 +138,7 @@ def pipeline_overview(results: PipelineResults) -> pd.DataFrame:
                 len(years),
                 int(effective_years),
                 len(results.ccdf),
-                int(results.regime_fits["fit_status"].astype(str).str.startswith("ok").sum()),
+                int(results.regime_fits["fit_status"].astype(str).ne("no_valid_fit").sum()),
                 len(results.regime_curves),
             ],
         }

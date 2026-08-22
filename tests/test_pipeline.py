@@ -76,7 +76,8 @@ def test_pipeline_runs_from_trusted_annual_parquets(tmp_path: Path):
     assert not results.ccdf_nominal_adjusted.empty
     assert not results.ccdf_habitual_effective.empty
     assert results.regime_fits["year"].tolist() == [2020, 2021]
-    assert results.regime_fits["fit_status"].eq("insufficient_positive_observations").all()
+    assert results.regime_fits["fit_status"].eq("no_valid_fit").all()
+    assert results.regime_fits["failure_reason"].eq("insufficient_positive_observations").all()
     assert results.regime_curves.empty
     for column in (
         "income_pietra",

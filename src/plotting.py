@@ -5,6 +5,8 @@ from __future__ import annotations
 from math import ceil
 from typing import Iterable
 
+import matplotlib
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -227,15 +229,21 @@ def plot_distribution_regime_fits(
     panel_size: tuple[float, float] = (6.0, 3.2),
 ):
     """Plot annual dual-panel fits using only persisted analytical datasets."""
-    fit_columns = {"year", "cutoff", "pareto_alpha_mle", "fit_status"}
+    fit_columns = {
+        "year",
+        "cutoff_normalized",
+        "cutoff_income_adj",
+        "pareto_alpha",
+        "fit_status",
+    }
     curve_columns = {
         "year",
-        "income",
-        "empirical_ccdf",
+        "income_normalized",
+        "empirical_ccdf_percent",
         "gompertz_transform",
         "regime",
         "gompertz_fitted_transform",
-        "pareto_fitted_ccdf",
+        "pareto_fitted_ccdf_percent",
     }
     _require_columns(fits, fit_columns, "Regime fits")
     _require_columns(curves, curve_columns, "Regime curves")
@@ -255,9 +263,10 @@ def plot_distribution_regime_fits(
         for row, year in enumerate(page):
             left, right = axes[row]
             fit = fits.loc[fits["year"] == year].iloc[0]
-            annual = curves.loc[curves["year"] == year].sort_values("income")
-            cutoff = pd.to_numeric(pd.Series([fit["cutoff"]]), errors="coerce").iloc[0]
-            if not str(fit["fit_status"]).startswith("ok") or annual.empty or not np.isfinite(cutoff):
+            annual = curves.loc[curves["year"] == year].sort_values("income_normalized")
+            cutoff = pd.to_numeric(pd.Series([fit["cutoff_normalized"]]), errors="coerce").iloc[0]
+            valid_fit = str(fit["fit_status"]) != "no_valid_fit"
+            if not valid_fit or annual.empty or not np.isfinite(cutoff):
                 for ax, title in ((left, "Gompertz body"), (right, "Pareto tail")):
                     ax.text(0.5, 0.5, f"No valid fit\n{fit['fit_status']}", ha="center", va="center")
                     ax.set(title=f"PNAD {year} — {title}")
@@ -265,13 +274,13 @@ def plot_distribution_regime_fits(
                 continue
 
             body = annual.loc[annual["regime"] == "gompertz_body"].dropna(
-                subset=["income", "gompertz_transform"]
+                subset=["income_normalized", "gompertz_transform"]
             )
             tail = annual.loc[annual["regime"] == "pareto_tail"].dropna(
-                subset=["income", "empirical_ccdf"]
+                subset=["income_normalized", "empirical_ccdf_percent"]
             )
             left.scatter(
-                body["income"],
+                body["income_normalized"],
                 body["gompertz_transform"],
                 s=12,
                 color="#4C78A8",
@@ -279,7 +288,7 @@ def plot_distribution_regime_fits(
                 label="Empirical",
             )
             left.plot(
-                body["income"],
+                body["income_normalized"],
                 body["gompertz_fitted_transform"],
                 color="#E17C05",
                 linewidth=1.8,
@@ -288,15 +297,15 @@ def plot_distribution_regime_fits(
             left.axvline(cutoff, color="#3F3F3F", linestyle="--", linewidth=1.1, label="Cutoff")
             left.set(
                 title=f"PNAD {year} — Gompertz body",
-                xlabel="Income (2025 USD)",
-                ylabel="-ln[-ln(S(x))]",
+                xlabel="Normalized income x = income / annual mean",
+                ylabel="ln[ln F(x)]  (F in %)",
             )
             left.grid(True, alpha=0.22)
             left.legend(frameon=False, fontsize="small")
 
             right.loglog(
-                tail["income"],
-                tail["empirical_ccdf"],
+                tail["income_normalized"],
+                tail["empirical_ccdf_percent"],
                 marker="o",
                 markersize=2.8,
                 linestyle="none",
@@ -305,21 +314,21 @@ def plot_distribution_regime_fits(
                 label="Empirical tail",
             )
             right.loglog(
-                tail["income"],
-                tail["pareto_fitted_ccdf"],
+                tail["income_normalized"],
+                tail["pareto_fitted_ccdf_percent"],
                 color="#E17C05",
                 linewidth=1.8,
                 label="Pareto MLE",
             )
             right.axvline(cutoff, color="#3F3F3F", linestyle="--", linewidth=1.1, label="Cutoff")
             right.set(
-                title=f"PNAD {year} — Pareto tail (alpha={fit['pareto_alpha_mle']:.2f})",
-                xlabel="Income (2025 USD, log scale)",
-                ylabel="S(x) (log scale)",
+                title=f"PNAD {year} — Pareto tail (CCDF alpha={fit['pareto_alpha']:.2f})",
+                xlabel="Normalized income x (log scale)",
+                ylabel="F(x), percent (log scale)",
             )
             right.grid(True, which="both", alpha=0.22)
             right.legend(frameon=False, fontsize="small")
-            if fit["fit_status"] != "ok":
+            if fit["fit_status"] != "ok_interior":
                 for ax in (left, right):
                     ax.text(
                         0.99,
@@ -331,6 +340,16 @@ def plot_distribution_regime_fits(
                         fontsize="x-small",
                         color="#555555",
                     )
+            left.text(
+                0.01,
+                0.03,
+                f"cutoff = {cutoff:.2f} mean incomes\n({fit['cutoff_income_adj']:.0f} in 2025 USD)",
+                transform=left.transAxes,
+                ha="left",
+                va="bottom",
+                fontsize="x-small",
+                color="#555555",
+            )
         fig.suptitle(f"Annual Gompertz-Pareto regime fits — {page[0]}–{page[-1]}", y=1.001)
         fig.tight_layout()
         figures.append(fig)
@@ -347,7 +366,7 @@ def _plot_regime_history(
 ):
     _require_columns(fits, {"year", value_col, "fit_status"}, "Regime fits")
     frame = fits.sort_values("year").copy()
-    valid = frame["fit_status"].astype(str).str.startswith("ok")
+    valid = frame["fit_status"].astype(str).ne("no_valid_fit")
     frame[value_col] = pd.to_numeric(frame[value_col], errors="coerce").where(valid)
     full_years = np.arange(int(frame["year"].min()), int(frame["year"].max()) + 1)
     fig, ax = plt.subplots(figsize=figsize)
@@ -374,19 +393,19 @@ def plot_gompertz_parameter_history(fits: pd.DataFrame, figsize=(11, 5.5)):
     return _plot_regime_history(
         fits,
         "gompertz_B",
-        ylabel="Gompertz slope B (per 2025 USD)",
-        title="Gompertz body parameter B",
+        ylabel="Gompertz slope B (normalized-income scale)",
+        title="Normalized Gompertz body parameter B",
         figsize=figsize,
     )
 
 
 def plot_pareto_alpha_history(fits: pd.DataFrame, figsize=(11, 5.5)):
-    """Plot the annual Pareto density exponent from the persisted fit summary."""
+    """Plot the annual Pareto CCDF exponent from the persisted fit summary."""
     return _plot_regime_history(
         fits,
-        "pareto_alpha_mle",
-        ylabel="Pareto density exponent alpha",
-        title="Pareto upper-tail exponent",
+        "pareto_alpha",
+        ylabel="Pareto CCDF exponent alpha",
+        title="Pareto upper-tail CCDF exponent",
         figsize=figsize,
     )
 
@@ -395,9 +414,9 @@ def plot_distribution_cutoff_history(fits: pd.DataFrame, figsize=(11, 5.5)):
     """Plot the annual Gompertz-Pareto transition income."""
     return _plot_regime_history(
         fits,
-        "cutoff",
-        ylabel="Cutoff income (2025 USD)",
-        title="Gompertz-Pareto distribution cutoff",
+        "cutoff_normalized",
+        ylabel="Cutoff / annual mean income",
+        title="Normalized Gompertz-Pareto distribution cutoff",
         figsize=figsize,
     )
 
@@ -407,7 +426,7 @@ def plot_regime_r2_history(fits: pd.DataFrame, figsize=(11, 5.5)):
     columns = {"year", "gompertz_r2", "pareto_r2", "fit_status"}
     _require_columns(fits, columns, "Regime fits")
     frame = fits.sort_values("year").copy()
-    valid = frame["fit_status"].astype(str).str.startswith("ok")
+    valid = frame["fit_status"].astype(str).ne("no_valid_fit")
     for column in ("gompertz_r2", "pareto_r2"):
         frame[column] = pd.to_numeric(frame[column], errors="coerce").where(valid)
     if frame[["gompertz_r2", "pareto_r2"]].notna().sum().eq(0).any():
