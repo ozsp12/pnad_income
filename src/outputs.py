@@ -118,7 +118,7 @@ ARTIFACT_DESCRIPTIONS = {
         "Annual empirical CCDF data comparing habitual and effective income measures when both are available in the analytical data."
     ),
     "paper_distribution_regime_fits.csv": (
-        "Annual Gompertz-body and Pareto-tail profile fits estimated exclusively from positive trusted income in harmonized 2025 USD."
+        "Annual normalized Gompertz-body and Pareto-tail likelihood profiles from positive trusted adjusted income, including cutoff identification, sensitivity, continuity, and fit diagnostics."
     ),
     "paper_distribution_regime_curves.parquet": (
         "Empirical and fitted annual CCDF curve points that fully reproduce the Gompertz-Pareto regime figures without microdata access."
@@ -166,13 +166,13 @@ ARTIFACT_DESCRIPTIONS = {
         "Graphical comparison of the internally calculated Gini series with documented external reference series used for technical validation."
     ),
     "paper_gompertz_parameter_B_all_years.png": (
-        "Annual Gompertz body slope B estimated by the common profile-search procedure on trusted adjusted income."
+        "Annual positive Gompertz body slope B on the normalized-income scale from the fixed-intercept profile estimator."
     ),
     "paper_pareto_alpha_all_years.png": (
-        "Annual maximum-likelihood Pareto density exponent for the selected upper-income tail."
+        "Annual maximum-likelihood Pareto CCDF exponent alpha for the selected upper-income tail; the density exponent is alpha plus one."
     ),
     "paper_distribution_cutoff_all_years.png": (
-        "Annual income cutoff in 2025 USD separating the selected Gompertz body and Pareto tail regimes."
+        "Annual normalized-income cutoff separating the profiled Gompertz body and Pareto tail regimes."
     ),
     "paper_distribution_regime_r2_all_years.png": (
         "Annual Gompertz-body and Pareto-tail regression R-squared values with model-specific mean reference lines."

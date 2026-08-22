@@ -71,10 +71,11 @@ jobs:
             --ccdf-base 1.05 \
             --regime-min-body 100 \
             --regime-min-tail 100 \
-            --regime-min-tail-fraction 0.01 \
-            --regime-cutoff-quantile-min 0.80 \
-            --regime-cutoff-quantile-max 0.99 \
-            --regime-selection-criterion bic \
+            --regime-min-tail-fraction 0.005 \
+            --regime-cutoff-quantile-min 0.20 \
+            --regime-cutoff-quantile-max 0.995 \
+            --regime-selection-criterion log_likelihood \
+            --regime-gompertz-intercept-mode fixed \
             --histogram-bins 100 \
             --plot-columns 3 \
             --outlier-method log_mad \
@@ -174,23 +175,46 @@ jobs:
           regime_fits = pd.read_csv(regime_fits_path) if regime_fits_path.exists() else pd.DataFrame()
           regime_curves = pd.read_parquet(regime_curves_path) if regime_curves_path.exists() else pd.DataFrame()
           required_fit_columns = {
-              'year', 'cutoff', 'cutoff_quantile', 'n_total', 'n_body', 'n_tail', 'tail_fraction',
-              'gompertz_A', 'gompertz_B', 'gompertz_r2', 'gompertz_rmse', 'gompertz_aic',
-              'gompertz_bic', 'pareto_alpha_mle', 'pareto_ccdf_slope', 'pareto_intercept',
-              'pareto_r2', 'pareto_rmse', 'pareto_aic', 'pareto_bic', 'pareto_ks',
-              'joint_aic', 'joint_bic', 'fit_status',
+              'year', 'normalization_mean', 'cutoff_normalized', 'cutoff_income_adj',
+              'cutoff_quantile', 'n_total', 'n_body', 'n_tail', 'body_fraction', 'tail_fraction',
+              'gompertz_intercept_mode', 'gompertz_A', 'gompertz_A_theoretical',
+              'gompertz_A_free_diagnostic', 'gompertz_B', 'gompertz_r2', 'gompertz_rmse',
+              'pareto_alpha', 'pareto_density_exponent', 'pareto_beta', 'pareto_r2',
+              'pareto_rmse', 'pareto_ks', 'continuity_error', 'joint_log_likelihood',
+              'joint_aic', 'joint_bic', 'likelihood_type', 'second_best_cutoff_normalized',
+              'log_likelihood_difference', 'profile_ci_lower', 'profile_ci_upper',
+              'sensitivity_cutoff_p20', 'sensitivity_cutoff_p40', 'sensitivity_cutoff_p60',
+              'candidate_count', 'selection_criterion', 'fit_status', 'failure_reason',
           }
           required_curve_columns = {
-              'year', 'income', 'empirical_ccdf', 'gompertz_transform', 'log_income',
-              'log_empirical_ccdf', 'regime', 'cutoff', 'gompertz_fitted_transform',
-              'gompertz_fitted_ccdf', 'pareto_fitted_ccdf', 'pareto_fitted_log_ccdf',
+              'year', 'income_normalized', 'income_adj_2025_usd', 'empirical_ccdf_percent',
+              'gompertz_transform', 'log_income_normalized', 'log_empirical_ccdf_percent',
+              'regime', 'cutoff_normalized', 'cutoff_income_adj', 'gompertz_fitted_transform',
+              'gompertz_fitted_ccdf_percent', 'pareto_fitted_ccdf_percent',
+              'pareto_fitted_log_ccdf',
           }
           regime_fit_schema_ok = required_fit_columns.issubset(regime_fits.columns)
           regime_curve_schema_ok = required_curve_columns.issubset(regime_curves.columns)
           regime_years_ok = bool(
               'year' in regime_fits and len(regime_fits) == 45 and regime_fits['year'].is_unique
           )
-          valid_regime_fits = int(regime_fits['fit_status'].astype(str).str.startswith('ok').sum()) if 'fit_status' in regime_fits else 0
+          allowed_regime_statuses = {
+              'ok_interior', 'boundary_lower', 'boundary_upper', 'flat_profile',
+              'weakly_identified', 'no_valid_fit',
+          }
+          regime_statuses_ok = bool(
+              'fit_status' in regime_fits
+              and set(regime_fits['fit_status'].dropna().astype(str)).issubset(allowed_regime_statuses)
+          )
+          valid_regime_fits = int(regime_fits['fit_status'].astype(str).ne('no_valid_fit').sum()) if 'fit_status' in regime_fits else 0
+          valid_rows = regime_fits.loc[regime_fits['fit_status'].astype(str).ne('no_valid_fit')] if 'fit_status' in regime_fits else pd.DataFrame()
+          regime_math_ok = bool(
+              not valid_rows.empty
+              and valid_rows['gompertz_B'].gt(0).all()
+              and valid_rows['pareto_alpha'].gt(1).all()
+              and valid_rows['pareto_density_exponent'].sub(valid_rows['pareto_alpha']).sub(1).abs().lt(1e-10).all()
+              and valid_rows['continuity_error'].abs().lt(1e-10).all()
+          )
 
           print('TRUSTED_FILE_COUNT', len(trusted_files))
           print('FIGURE_COUNT', len(figures))
@@ -209,6 +233,8 @@ jobs:
           print('REGIME_FIT_SCHEMA_OK', regime_fit_schema_ok)
           print('REGIME_CURVE_SCHEMA_OK', regime_curve_schema_ok)
           print('REGIME_YEARS_OK', regime_years_ok)
+          print('REGIME_STATUSES_OK', regime_statuses_ok)
+          print('REGIME_MATH_OK', regime_math_ok)
           print('VALID_REGIME_FITS', valid_regime_fits)
 
           if len(trusted_files) != 45:
@@ -234,6 +260,8 @@ jobs:
               regime_fit_schema_ok,
               regime_curve_schema_ok,
               regime_years_ok,
+              regime_statuses_ok,
+              regime_math_ok,
           ]):
               raise SystemExit('Manifest audit failed.')
           PY
