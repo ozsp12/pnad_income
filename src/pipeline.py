@@ -26,8 +26,6 @@ class PipelineConfig:
     regime_min_tail_fraction: float = 0.005
     regime_cutoff_quantile_min: float = 0.20
     regime_cutoff_quantile_max: float = 0.995
-    regime_selection_criterion: str = "log_likelihood"
-    regime_gompertz_intercept_mode: str = "fixed"
 
 
 @dataclass
@@ -91,8 +89,6 @@ def run_pipeline(config: PipelineConfig) -> PipelineResults:
         min_tail_fraction=config.regime_min_tail_fraction,
         cutoff_quantile_min=config.regime_cutoff_quantile_min,
         cutoff_quantile_max=config.regime_cutoff_quantile_max,
-        selection_criterion=config.regime_selection_criterion,
-        gompertz_intercept_mode=config.regime_gompertz_intercept_mode,
     )
     regime_fits, regime_curves = fit_distribution_regimes(
         panel,
