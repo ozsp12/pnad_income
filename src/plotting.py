@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-from analysis import inequality_statistics, lorenz_curve
+from analysis import gompertz_transform, inequality_statistics, lorenz_curve
 
 DEFAULT_NCOLS = 4
 DEFAULT_INEQUALITY_NCOLS = 3
@@ -213,6 +213,195 @@ def plot_income_group_totals(group_totals, value_col="income", figsize=(12, 6)):
     return fig
 
 
+def _require_columns(frame: pd.DataFrame, required: set[str], label: str) -> None:
+    if missing := required.difference(frame.columns):
+        raise KeyError(f"{label} is missing: " + ", ".join(sorted(missing)))
+
+
+def plot_distribution_regime_fits(
+    fits: pd.DataFrame,
+    curves: pd.DataFrame,
+    *,
+    years: Iterable[int] | None = None,
+    max_years_per_page: int = 6,
+    panel_size: tuple[float, float] = (6.0, 3.2),
+):
+    """Plot annual dual-panel fits using only persisted analytical datasets."""
+    fit_columns = {"year", "cutoff", "pareto_alpha_mle", "fit_status"}
+    curve_columns = {
+        "year",
+        "income",
+        "empirical_ccdf",
+        "gompertz_transform",
+        "regime",
+        "gompertz_fitted_transform",
+        "pareto_fitted_ccdf",
+    }
+    _require_columns(fits, fit_columns, "Regime fits")
+    _require_columns(curves, curve_columns, "Regime curves")
+    if max_years_per_page < 1:
+        raise ValueError("max_years_per_page must be at least 1.")
+
+    selected = _years(fits, years)
+    pages = [selected[i : i + max_years_per_page] for i in range(0, len(selected), max_years_per_page)]
+    figures = []
+    for page in pages:
+        fig, axes = plt.subplots(
+            len(page),
+            2,
+            figsize=(panel_size[0] * 2, panel_size[1] * len(page)),
+            squeeze=False,
+        )
+        for row, year in enumerate(page):
+            left, right = axes[row]
+            fit = fits.loc[fits["year"] == year].iloc[0]
+            annual = curves.loc[curves["year"] == year].sort_values("income")
+            cutoff = pd.to_numeric(pd.Series([fit["cutoff"]]), errors="coerce").iloc[0]
+            if not str(fit["fit_status"]).startswith("ok") or annual.empty or not np.isfinite(cutoff):
+                for ax, title in ((left, "Gompertz body"), (right, "Pareto tail")):
+                    ax.text(0.5, 0.5, f"No valid fit\n{fit['fit_status']}", ha="center", va="center")
+                    ax.set(title=f"PNAD {year} — {title}")
+                    ax.set_axis_off()
+                continue
+
+            body = annual.loc[annual["regime"] == "gompertz_body"].dropna(
+                subset=["income", "gompertz_transform"]
+            )
+            tail = annual.loc[annual["regime"] == "pareto_tail"].dropna(
+                subset=["income", "empirical_ccdf"]
+            )
+            left.scatter(
+                body["income"],
+                body["gompertz_transform"],
+                s=12,
+                color="#4C78A8",
+                alpha=0.75,
+                label="Empirical",
+            )
+            left.plot(
+                body["income"],
+                body["gompertz_fitted_transform"],
+                color="#E17C05",
+                linewidth=1.8,
+                label="Gompertz fit",
+            )
+            left.axvline(cutoff, color="#3F3F3F", linestyle="--", linewidth=1.1, label="Cutoff")
+            left.set(
+                title=f"PNAD {year} — Gompertz body",
+                xlabel="Income (2025 USD)",
+                ylabel="-ln[-ln(S(x))]",
+            )
+            left.grid(True, alpha=0.22)
+            left.legend(frameon=False, fontsize="small")
+
+            right.loglog(
+                tail["income"],
+                tail["empirical_ccdf"],
+                marker="o",
+                markersize=2.8,
+                linestyle="none",
+                color="#4C78A8",
+                alpha=0.75,
+                label="Empirical tail",
+            )
+            right.loglog(
+                tail["income"],
+                tail["pareto_fitted_ccdf"],
+                color="#E17C05",
+                linewidth=1.8,
+                label="Pareto MLE",
+            )
+            right.axvline(cutoff, color="#3F3F3F", linestyle="--", linewidth=1.1, label="Cutoff")
+            right.set(
+                title=f"PNAD {year} — Pareto tail (alpha={fit['pareto_alpha_mle']:.2f})",
+                xlabel="Income (2025 USD, log scale)",
+                ylabel="S(x) (log scale)",
+            )
+            right.grid(True, which="both", alpha=0.22)
+            right.legend(frameon=False, fontsize="small")
+            if fit["fit_status"] != "ok":
+                for ax in (left, right):
+                    ax.text(
+                        0.99,
+                        0.03,
+                        str(fit["fit_status"]).replace("_", " "),
+                        transform=ax.transAxes,
+                        ha="right",
+                        va="bottom",
+                        fontsize="x-small",
+                        color="#555555",
+                    )
+        fig.suptitle(f"Annual Gompertz-Pareto regime fits — {page[0]}–{page[-1]}", y=1.001)
+        fig.tight_layout()
+        figures.append(fig)
+    return figures
+
+
+def _plot_regime_history(
+    fits: pd.DataFrame,
+    value_col: str,
+    *,
+    ylabel: str,
+    title: str,
+    figsize: tuple[float, float] = (11, 5.5),
+):
+    _require_columns(fits, {"year", value_col, "fit_status"}, "Regime fits")
+    frame = fits.sort_values("year").copy()
+    valid = frame["fit_status"].astype(str).str.startswith("ok")
+    frame[value_col] = pd.to_numeric(frame[value_col], errors="coerce").where(valid)
+    full_years = np.arange(int(frame["year"].min()), int(frame["year"].max()) + 1)
+    fig, ax = plt.subplots(figsize=figsize)
+    _annual_line_with_gaps(
+        ax,
+        frame[["year", value_col]],
+        value_col,
+        years=full_years,
+        label=title,
+        marker="o",
+        markersize=3.5,
+        linewidth=1.4,
+        color="#4C78A8",
+    )
+    ax.set(xlabel="Year", ylabel=ylabel, title=title)
+    ax.grid(True, alpha=0.25)
+    _transition(ax)
+    fig.tight_layout()
+    return fig
+
+
+def plot_gompertz_parameter_history(fits: pd.DataFrame, figsize=(11, 5.5)):
+    """Plot the annual Gompertz slope from the persisted fit summary."""
+    return _plot_regime_history(
+        fits,
+        "gompertz_B",
+        ylabel="Gompertz slope B (per 2025 USD)",
+        title="Gompertz body parameter B",
+        figsize=figsize,
+    )
+
+
+def plot_pareto_alpha_history(fits: pd.DataFrame, figsize=(11, 5.5)):
+    """Plot the annual Pareto density exponent from the persisted fit summary."""
+    return _plot_regime_history(
+        fits,
+        "pareto_alpha_mle",
+        ylabel="Pareto density exponent alpha",
+        title="Pareto upper-tail exponent",
+        figsize=figsize,
+    )
+
+
+def plot_distribution_cutoff_history(fits: pd.DataFrame, figsize=(11, 5.5)):
+    """Plot the annual Gompertz-Pareto transition income."""
+    return _plot_regime_history(
+        fits,
+        "cutoff",
+        ylabel="Cutoff income (2025 USD)",
+        title="Gompertz-Pareto distribution cutoff",
+        figsize=figsize,
+    )
+
+
 def plot_histogram(df, year, value_col="income", bins=100, yscale="log", figsize=(7, 4.5)):
     if yscale not in {"linear", "log"}:
         raise ValueError("yscale must be 'linear' or 'log'.")
@@ -276,7 +465,7 @@ def _ccdf_xy(frame, transform):
         return x[mask], probability[mask]
     if transform in {"gompertz", "double_log"}:
         mask = np.isfinite(x) & np.isfinite(probability) & (probability > 0) & (probability < 1)
-        return x[mask], -np.log(-np.log(probability[mask]))
+        return x[mask], gompertz_transform(probability[mask])
     raise ValueError("transform must be 'linear', 'loglog', 'gompertz', or 'double_log'.")
 
 

@@ -416,6 +416,15 @@ def geometric_edges(
     return np.append(thresholds, final_edge)
 
 
+def gompertz_transform(probability) -> np.ndarray:
+    """Return ``-ln[-ln(S)]`` for probabilities strictly between zero and one."""
+    values = np.asarray(probability, dtype=float)
+    transformed = np.full(values.shape, np.nan, dtype=float)
+    mask = np.isfinite(values) & (values > 0) & (values < 1)
+    transformed[mask] = -np.log(-np.log(values[mask]))
+    return transformed
+
+
 def compute_ccdf(
     values,
     base: float = 1.05,

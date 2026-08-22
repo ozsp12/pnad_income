@@ -69,6 +69,12 @@ jobs:
             --start-year 1976 \
             --end-year 2025 \
             --ccdf-base 1.05 \
+            --regime-min-body 100 \
+            --regime-min-tail 100 \
+            --regime-min-tail-fraction 0.01 \
+            --regime-cutoff-quantile-min 0.80 \
+            --regime-cutoff-quantile-max 0.99 \
+            --regime-selection-criterion bic \
             --histogram-bins 100 \
             --plot-columns 3 \
             --outlier-method log_mad \
@@ -98,6 +104,8 @@ jobs:
               output_root / 'tables/paper_gini_external_references.csv',
               output_root / 'tables/paper_gini_external_comparison.csv',
               output_root / 'tables/paper_ccdf_income_nominal_adjusted.parquet',
+              output_root / 'tables/paper_distribution_regime_fits.csv',
+              output_root / 'tables/paper_distribution_regime_curves.parquet',
               output_root / 'figures/eda_refined_histogram_income_page_01.png',
               output_root / 'figures/eda_trusted_histogram_income_page_01.png',
               output_root / 'figures/eda_refined_boxplot_income_page_01.png',
@@ -111,6 +119,10 @@ jobs:
               output_root / 'figures/paper_inequality_gini_all_years.png',
               output_root / 'figures/paper_income_groups_p80_p99_p100_absolute_2025_usd_all_years.png',
               output_root / 'figures/paper_gini_external_validation.png',
+              output_root / 'figures/paper_distribution_regime_fit_page_01.png',
+              output_root / 'figures/paper_gompertz_parameter_B_all_years.png',
+              output_root / 'figures/paper_pareto_alpha_all_years.png',
+              output_root / 'figures/paper_distribution_cutoff_all_years.png',
           ]
           missing = [str(path) for path in required if not path.exists()]
           figures = list((output_root / 'figures').glob('*.png'))
@@ -156,6 +168,29 @@ jobs:
           commit_sha_ok = bool(not manifest.empty and manifest['commit_sha'].fillna('').str.len().ge(7).all())
           generated_at_ok = bool(not manifest.empty and manifest['generated_at'].fillna('').str.strip().ne('').all())
 
+          regime_fits_path = output_root / 'tables/paper_distribution_regime_fits.csv'
+          regime_curves_path = output_root / 'tables/paper_distribution_regime_curves.parquet'
+          regime_fits = pd.read_csv(regime_fits_path) if regime_fits_path.exists() else pd.DataFrame()
+          regime_curves = pd.read_parquet(regime_curves_path) if regime_curves_path.exists() else pd.DataFrame()
+          required_fit_columns = {
+              'year', 'cutoff', 'cutoff_quantile', 'n_total', 'n_body', 'n_tail', 'tail_fraction',
+              'gompertz_A', 'gompertz_B', 'gompertz_r2', 'gompertz_rmse', 'gompertz_aic',
+              'gompertz_bic', 'pareto_alpha_mle', 'pareto_ccdf_slope', 'pareto_intercept',
+              'pareto_r2', 'pareto_rmse', 'pareto_aic', 'pareto_bic', 'pareto_ks',
+              'joint_aic', 'joint_bic', 'fit_status',
+          }
+          required_curve_columns = {
+              'year', 'income', 'empirical_ccdf', 'gompertz_transform', 'log_income',
+              'log_empirical_ccdf', 'regime', 'cutoff', 'gompertz_fitted_transform',
+              'gompertz_fitted_ccdf', 'pareto_fitted_ccdf', 'pareto_fitted_log_ccdf',
+          }
+          regime_fit_schema_ok = required_fit_columns.issubset(regime_fits.columns)
+          regime_curve_schema_ok = required_curve_columns.issubset(regime_curves.columns)
+          regime_years_ok = bool(
+              'year' in regime_fits and len(regime_fits) == 45 and regime_fits['year'].is_unique
+          )
+          valid_regime_fits = int(regime_fits['fit_status'].astype(str).str.startswith('ok').sum()) if 'fit_status' in regime_fits else 0
+
           print('TRUSTED_FILE_COUNT', len(trusted_files))
           print('FIGURE_COUNT', len(figures))
           print('MISSING_REQUIRED', missing)
@@ -170,6 +205,10 @@ jobs:
           print('MANIFEST_SHA256_OK', sha256_ok)
           print('MANIFEST_COMMIT_SHA_OK', commit_sha_ok)
           print('MANIFEST_GENERATED_AT_OK', generated_at_ok)
+          print('REGIME_FIT_SCHEMA_OK', regime_fit_schema_ok)
+          print('REGIME_CURVE_SCHEMA_OK', regime_curve_schema_ok)
+          print('REGIME_YEARS_OK', regime_years_ok)
+          print('VALID_REGIME_FITS', valid_regime_fits)
 
           if len(trusted_files) != 45:
               raise SystemExit(f'Expected 45 trusted annual Parquet files, found {len(trusted_files)}')
@@ -191,6 +230,9 @@ jobs:
               sha256_ok,
               commit_sha_ok,
               generated_at_ok,
+              regime_fit_schema_ok,
+              regime_curve_schema_ok,
+              regime_years_ok,
           ]):
               raise SystemExit('Manifest audit failed.')
           PY
