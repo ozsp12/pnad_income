@@ -23,7 +23,7 @@ pnad-income = "cli:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
-py-modules = ["analysis", "cli", "data", "descriptive", "outputs", "pipeline", "plotting"]
+py-modules = ["analysis", "cli", "data", "descriptive", "outputs", "pipeline", "plotting", "regime_analysis"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]

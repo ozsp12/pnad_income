@@ -26,10 +26,13 @@ from pipeline import PipelineResults, pipeline_overview
 from plotting import (
     plot_ccdf,
     plot_ccdf_grid,
+    plot_distribution_cutoff_history,
+    plot_distribution_regime_fits,
     plot_extended_inequality_evolution,
     plot_gini_evolution,
     plot_gini_validation,
     plot_gini_zanardi,
+    plot_gompertz_parameter_history,
     plot_histogram,
     plot_histogram_grid,
     plot_income_group_totals,
@@ -39,6 +42,7 @@ from plotting import (
     plot_lorenz_grid,
     plot_measure_comparison,
     plot_measure_comparison_grid,
+    plot_pareto_alpha_history,
     plot_pietra_kolkata_bound,
     plot_primary_indices,
     plot_top_income_shares,
@@ -112,6 +116,12 @@ ARTIFACT_DESCRIPTIONS = {
     "paper_ccdf_income_habitual_effective.parquet": (
         "Annual empirical CCDF data comparing habitual and effective income measures when both are available in the analytical data."
     ),
+    "paper_distribution_regime_fits.csv": (
+        "Annual Gompertz-body and Pareto-tail profile fits estimated exclusively from positive trusted income in harmonized 2025 USD."
+    ),
+    "paper_distribution_regime_curves.parquet": (
+        "Empirical and fitted annual CCDF curve points that fully reproduce the Gompertz-Pareto regime figures without microdata access."
+    ),
     "paper_gini_external_references.csv": (
         "Documented external Gini reference series supplied for validation of the internally calculated PNAD inequality trajectory."
     ),
@@ -153,6 +163,15 @@ ARTIFACT_DESCRIPTIONS = {
     ),
     "paper_gini_external_validation.png": (
         "Graphical comparison of the internally calculated Gini series with documented external reference series used for technical validation."
+    ),
+    "paper_gompertz_parameter_B_all_years.png": (
+        "Annual Gompertz body slope B estimated by the common profile-search procedure on trusted adjusted income."
+    ),
+    "paper_pareto_alpha_all_years.png": (
+        "Annual maximum-likelihood Pareto density exponent for the selected upper-income tail."
+    ),
+    "paper_distribution_cutoff_all_years.png": (
+        "Annual income cutoff in 2025 USD separating the selected Gompertz body and Pareto tail regimes."
     ),
     "eda_refined_outlier_income_upper_tail_all_years.png": (
         "Upper-tail income diagnostic for all refined survey years before trusted-layer cleaning."
@@ -308,6 +327,7 @@ def _describe_artifact(filename: str) -> str:
         "paper_ccdf_income_gompertz": "Annual Gompertz-transformed income CCDFs used as a complementary diagnostic of distributional form.",
         "paper_lorenz_income_annotated_g_p_k_z": "Annual Lorenz curves annotated with Gini G, Pietra P, Kolkata k, and Zanardi Z inequality measures.",
         "paper_ccdf_income_nominal_vs_adjusted_loglog": "Annual log-log comparison of nominal and monetarily adjusted income CCDFs.",
+        "paper_distribution_regime_fit": "Annual dual-panel Gompertz-body and Pareto-tail profile fits reconstructed exclusively from persisted derived datasets.",
         "eda_trusted_selected_histogram_income": "Selected-year trusted-layer income histograms using the user-configured subplot grid.",
         "paper_selected_ccdf_income_loglog": "Selected-year empirical income CCDFs in log-log coordinates using the user-configured subplot grid.",
         "paper_selected_ccdf_income_gompertz": "Selected-year Gompertz-transformed income CCDFs using the user-configured subplot grid.",
@@ -463,6 +483,8 @@ def export_analysis_outputs(
         "paper_annual_inequality_indices.csv": indices,
         "paper_annual_income_groups_p80_p99_p100_2025_usd.csv": income_groups,
         "paper_ccdf_income_nominal_adjusted.parquet": results.ccdf_nominal_adjusted,
+        "paper_distribution_regime_fits.csv": results.regime_fits,
+        "paper_distribution_regime_curves.parquet": results.regime_curves,
     }
     if not results.ccdf_habitual_effective.empty:
         tables["paper_ccdf_income_habitual_effective.parquet"] = results.ccdf_habitual_effective
@@ -480,6 +502,12 @@ def export_analysis_outputs(
     saved_tables = [save_table(frame, paths.tables / name) for name, frame in tables.items()]
     add_manifest_rows(saved_tables, "table")
 
+    # The persisted datasets are the public interface to every regime figure.
+    # Reloading them here prevents plotting from depending on the trusted panel
+    # or on an in-memory estimator result that researchers cannot reproduce.
+    persisted_regime_fits = pd.read_csv(paths.tables / "paper_distribution_regime_fits.csv")
+    persisted_regime_curves = pd.read_parquet(paths.tables / "paper_distribution_regime_curves.parquet")
+
     scalar_figures = {
         "paper_inequality_gini_all_years.png": plot_gini_evolution(results.summary),
         "paper_inequality_top_income_shares_all_years.png": plot_top_income_shares(results.summary),
@@ -494,6 +522,9 @@ def export_analysis_outputs(
         "paper_inequality_gini_pietra_kolkata_relations.png": plot_kolkata_pietra_relationships(indices),
         "paper_inequality_pietra_kolkata_bound_all_years.png": plot_pietra_kolkata_bound(indices),
         "paper_inequality_gini_zanardi_phase.png": plot_gini_zanardi(indices),
+        "paper_gompertz_parameter_B_all_years.png": plot_gompertz_parameter_history(persisted_regime_fits),
+        "paper_pareto_alpha_all_years.png": plot_pareto_alpha_history(persisted_regime_fits),
+        "paper_distribution_cutoff_all_years.png": plot_distribution_cutoff_history(persisted_regime_fits),
     }
     if gini_references is not None and not gini_references.empty:
         scalar_figures["paper_gini_external_validation.png"] = plot_gini_validation(results.summary, gini_references)
@@ -586,6 +617,15 @@ def export_analysis_outputs(
                 transform="loglog",
                 nrows=complete_nrows,
                 ncols=complete_ncols,
+            ),
+        ),
+        (
+            "paper_distribution_regime_fit",
+            plot_distribution_regime_fits(
+                persisted_regime_fits,
+                persisted_regime_curves,
+                years=years,
+                max_years_per_page=6,
             ),
         ),
     ]

@@ -19,6 +19,7 @@ pnad_income/
 │   ├── descriptive.py
 │   ├── outputs.py
 │   ├── pipeline.py
+│   ├── regime_analysis.py
 │   └── plotting.py
 │
 ├── tests/            # Automated validation of data treatment and analyses
@@ -41,7 +42,7 @@ pnad_income/
 | [`data/refined/`](data/refined/) | Structurally harmonized annual Parquet files before deterministic data-quality treatment. |
 | [`data/trusted/`](data/trusted/) | Deterministically rebuilt from `refined` after cleaning; this is the only data layer used by scientific analyses. |
 | [`data/metadata/`](data/metadata/) | Annual extraction metadata, sentinel codes, currencies, monetary factors, and provenance required to reproduce preparation and cleaning. |
-| [`src/`](src/) | Data access, cleaning, EDA, distributional analysis, plotting, orchestration, and persistence. The refined-to-trusted cleaning rule, sentinel precedence and flag exclusivity, outlier methods, monetary harmonization, CCDF construction, Lorenz analysis, and inequality measures are documented in [`src/README.md`](src/README.md). |
+| [`src/`](src/) | Data access, cleaning, EDA, distributional and Gompertz-Pareto regime analysis, plotting, orchestration, and persistence. The refined-to-trusted cleaning rule, sentinel precedence and flag exclusivity, outlier methods, monetary harmonization, CCDF construction, Lorenz analysis, inequality measures, and derived-data plotting interface are documented in [`src/README.md`](src/README.md). |
 | [`tests/`](tests/) | Automated tests for preprocessing, trusted-layer construction, CCDFs, inequality measures, plotting, and pipeline behavior. |
 | [`outputs/`](outputs/) | Generated figures, tables, and manifest using flat `eda_` and `paper_` prefixes. |
 | [`.github/workflows/`](.github/workflows/) | Automated validation, trusted-data rebuilding, output audit, and persistence. |
@@ -66,13 +67,13 @@ Generated products use a shallow structure under [`outputs/figures/`](outputs/fi
 
 | Location | Purpose | Representative artifacts |
 |---|---|---|
-| [`outputs/figures/`](outputs/figures/) | EDA histograms, boxplots, upper-tail diagnostics, refined-versus-trusted comparisons, and scientific distributional or inequality figures. | `eda_refined_histogram_income_page_01.png`, `paper_lorenz_income_annotated_g_p_k_z_page_01.png`, `paper_income_groups_p80_p99_p100_absolute_2025_usd_all_years.png`, `paper_gini_external_validation.png` |
-| [`outputs/tables/`](outputs/tables/) | Cleaning diagnostics, thresholds, frequencies, descriptive statistics, and scientific summary, CCDF, inequality, income-group, and external-validation tables. | `eda_cleaning_audit.csv`, `paper_annual_inequality_indices.csv`, `paper_annual_income_groups_p80_p99_p100_2025_usd.csv`, `paper_gini_external_comparison.csv` |
+| [`outputs/figures/`](outputs/figures/) | EDA histograms, boxplots, upper-tail diagnostics, refined-versus-trusted comparisons, and scientific distributional or inequality figures. | `eda_refined_histogram_income_page_01.png`, `paper_lorenz_income_annotated_g_p_k_z_page_01.png`, `paper_distribution_regime_fit_page_01.png`, `paper_pareto_alpha_all_years.png` |
+| [`outputs/tables/`](outputs/tables/) | Cleaning diagnostics, thresholds, frequencies, descriptive statistics, and scientific summary, CCDF, inequality, income-group, external-validation, and regime-fit datasets. | `eda_cleaning_audit.csv`, `paper_annual_inequality_indices.csv`, `paper_distribution_regime_fits.csv`, `paper_distribution_regime_curves.parquet` |
 | [`outputs/manifest.csv`](outputs/manifest.csv) | Inventory of generated analysis artifacts. | Complete output manifest. |
 
 # Reproducibility
 
-Install the project in editable mode with `pip install -e '.[dev]'`. Running `pnad-income --refined data/refined --trusted data/trusted --metadata data/metadata/pnad_metadata.csv --gini-references data/metadata/series_ipea_banco_mundial.csv --plot-columns 3 --output outputs` rebuilds the trusted layer, executes the 1976–2025 analysis, and writes all audit and scientific artifacts. `--plot-columns` controls the number of columns in the annotated annual inequality grid and defaults to three. Pull requests run tests and a complete temporary pipeline. After changes reach `main`, GitHub Actions rebuilds `data/trusted/` and `outputs/`, audits the expected files, uploads the outputs as an artifact, and commits regenerated trusted datasets and analysis products when they change.
+Install the project in editable mode with `pip install -e '.[dev]'`. Running `pnad-income --refined data/refined --trusted data/trusted --metadata data/metadata/pnad_metadata.csv --gini-references data/metadata/series_ipea_banco_mundial.csv --plot-columns 3 --output outputs` rebuilds the trusted layer, executes the 1976–2025 analysis, and writes all audit and scientific artifacts. `--plot-columns` controls the number of columns in the annotated annual inequality grid and defaults to three. The Gompertz-Pareto cutoff profile defaults to joint BIC, the 0.80–0.99 empirical-quantile interval, at least 100 observations in each regime, and a tail fraction of at least 1%; every setting has a matching `--regime-*` CLI option. The regime figures are rebuilt only from `paper_distribution_regime_fits.csv` and `paper_distribution_regime_curves.parquet`. Pull requests run tests and a complete temporary pipeline. After changes reach `main`, GitHub Actions rebuilds `data/trusted/` and `outputs/`, audits the expected files, uploads the outputs as an artifact, and commits regenerated trusted datasets and analysis products when they change.
 
 # Author
 

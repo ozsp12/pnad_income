@@ -9,6 +9,7 @@ import pandas as pd
 
 from analysis import compare_income_measures_ccdf, summary_statistics
 from data import DEFAULT_METADATA_PATH, DEFAULT_TRUSTED_PATH, prepare_panel as prepare_data_panel
+from regime_analysis import RegimeFitConfig, fit_distribution_regimes
 
 
 @dataclass(frozen=True)
@@ -20,6 +21,12 @@ class PipelineConfig:
     ccdf_base: float = 1.05
     start_year: int | None = None
     end_year: int | None = None
+    regime_min_body_observations: int = 100
+    regime_min_tail_observations: int = 100
+    regime_min_tail_fraction: float = 0.01
+    regime_cutoff_quantile_min: float = 0.80
+    regime_cutoff_quantile_max: float = 0.99
+    regime_selection_criterion: str = "bic"
 
 
 @dataclass
@@ -29,6 +36,8 @@ class PipelineResults:
     panel: pd.DataFrame
     summary: pd.DataFrame
     ccdf: pd.DataFrame
+    regime_fits: pd.DataFrame
+    regime_curves: pd.DataFrame
     data_layer: str = "trusted"
 
     @property
@@ -74,7 +83,28 @@ def run_pipeline(config: PipelineConfig) -> PipelineResults:
         if column in panel.columns and panel[column].notna().any()
     )
     ccdf = compare_income_measures_ccdf(panel, measures=measures, base=config.ccdf_base)
-    return PipelineResults(panel=panel, summary=summary, ccdf=ccdf, data_layer="trusted")
+    regime_config = RegimeFitConfig(
+        ccdf_base=config.ccdf_base,
+        min_body_observations=config.regime_min_body_observations,
+        min_tail_observations=config.regime_min_tail_observations,
+        min_tail_fraction=config.regime_min_tail_fraction,
+        cutoff_quantile_min=config.regime_cutoff_quantile_min,
+        cutoff_quantile_max=config.regime_cutoff_quantile_max,
+        selection_criterion=config.regime_selection_criterion,
+    )
+    regime_fits, regime_curves = fit_distribution_regimes(
+        panel,
+        value_col="income_adj",
+        config=regime_config,
+    )
+    return PipelineResults(
+        panel=panel,
+        summary=summary,
+        ccdf=ccdf,
+        regime_fits=regime_fits,
+        regime_curves=regime_curves,
+        data_layer="trusted",
+    )
 
 
 def pipeline_overview(results: PipelineResults) -> pd.DataFrame:
@@ -95,6 +125,8 @@ def pipeline_overview(results: PipelineResults) -> pd.DataFrame:
                 "number_of_years",
                 "years_with_effective_income",
                 "ccdf_rows",
+                "years_with_valid_regime_fit",
+                "regime_curve_rows",
             ],
             "value": [
                 results.data_layer,
@@ -104,6 +136,8 @@ def pipeline_overview(results: PipelineResults) -> pd.DataFrame:
                 len(years),
                 int(effective_years),
                 len(results.ccdf),
+                int(results.regime_fits["fit_status"].astype(str).str.startswith("ok").sum()),
+                len(results.regime_curves),
             ],
         }
     )

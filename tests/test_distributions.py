@@ -1,6 +1,6 @@
 import numpy as np
 
-from analysis import compute_ccdf, geometric_thresholds
+from analysis import compute_ccdf, geometric_thresholds, gompertz_transform
 
 
 def test_ccdf_keeps_zero_income_in_denominator():
@@ -32,3 +32,9 @@ def test_ccdf_matches_original_naive_threshold_counting():
     actual = compute_ccdf(values, base=1.05, scale="probability")
     np.testing.assert_allclose(actual["bin"].to_numpy(), thresholds)
     np.testing.assert_allclose(actual["ccdf"].to_numpy(), expected)
+
+
+def test_gompertz_transform_uses_project_sign_and_domain():
+    transformed = gompertz_transform([0.5, 0.01, 0.001, 0.0, 1.0])
+    assert np.all(np.diff(transformed[:3]) < 0)
+    assert np.isnan(transformed[3:]).all()

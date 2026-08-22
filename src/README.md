@@ -7,6 +7,7 @@ The `src` directory contains the computational implementation for data access, t
 | [`data.py`](data.py) | Data-layer paths, metadata loading, annual refined/trusted file access, schema validation, raw-to-refined preparation, and monetary harmonization. |
 | [`descriptive.py`](descriptive.py) | `DescriptiveStatistics` provides annual EDA, exact-value frequencies, metadata-sentinel counts, histograms, boxplots, and upper-tail diagnostics. `IncomeDataCleaner` applies the deterministic refined-to-trusted cleaning rule, creates mutually exclusive quality flags, records annual thresholds, and materializes trusted Parquet files. |
 | [`analysis.py`](analysis.py) | Empirical CCDF construction, Lorenz curves, inequality indices, absolute p80/p99/p100 income totals, and external Gini validation. |
+| [`regime_analysis.py`](regime_analysis.py) | Annual profile search for the Gompertz-body/Pareto-tail transition, parameter estimation, fit diagnostics, and construction of the two derived datasets used by the regime figures. |
 | [`plotting.py`](plotting.py) | Scientific plots for CCDF, annotated Lorenz grids, absolute income-group totals, concentration, and inequality analyses. |
 | [`pipeline.py`](pipeline.py) | `PipelineConfig` and `PipelineResults`, plus orchestration of scientific analyses using the trusted data layer. |
 | [`outputs.py`](outputs.py) | Flat `figures/` and `tables/` persistence using `eda_` and `paper_` filename prefixes, including refined-versus-trusted diagnostics and the manifest. |
@@ -66,6 +67,62 @@ The annotated Lorenz grid reports Gini, Pietra, Kolkata, and Zanardi values in e
 
 The calculated PNAD Gini series is plotted together with the IPEA and World Bank reference series stored in [`../data/metadata/series_ipea_banco_mundial.csv`](../data/metadata/series_ipea_banco_mundial.csv). Every series is reindexed to the complete annual calendar before plotting, so absent observations remain `NaN` and create true gaps rather than interpolated connecting segments.
 
+## Gompertz-Pareto regime analysis
+
+The annual regime analysis uses only positive, finite `income_adj` observations prepared from the trusted layer. The adjusted 2025-USD scale makes the cutoff and Gompertz slope comparable across years; the Pareto exponent and empirical cutoff quantile are invariant to a positive within-year rescaling. No refined records enter this analysis.
+
+For each year, the empirical CCDF uses the same project definition and geometric threshold grid documented above. Candidate cutoffs are thresholds on that empirical grid with default empirical quantiles from 0.80 through 0.99. A candidate is admissible only when the body and tail each contain at least 100 observations, the tail contains at least 1% of the positive sample, both transformed fits contain enough curve points, and all fitted parameters are finite. These defaults are shared across years and are configurable through `RegimeFitConfig` and the corresponding CLI options.
+
+For body points below a candidate cutoff, the estimator fits
+
+$$
+-\ln[-\ln S(x)] = A + Bx.
+$$
+
+For observations $x_i\ge x_c$, the continuous Pareto density exponent is estimated by
+
+$$
+\widehat{\alpha}=1+\frac{n_{tail}}{\sum_i \ln(x_i/x_c)}.
+$$
+
+Under this density convention, the conditional CCDF is proportional to $x^{1-\widehat{\alpha}}$, so `pareto_ccdf_slope = 1 - pareto_alpha_mle`. Its unconditional intercept is anchored by the empirical tail fraction at the cutoff.
+
+Cutoff selection does not combine unrelated statistics. Both fitted regimes are mapped back to `log(S(x))`, giving a common response scale. Gaussian-residual AIC and BIC are calculated for the body, tail, and joint segmented fit; the default profile criterion is the minimum joint BIC with three fitted parameters (`A`, `B`, and `alpha`). The Pareto Kolmogorov-Smirnov distance is computed afterward for the selected tail and is reported only as an independent goodness-of-fit diagnostic. `fit_status` records controlled failures rather than substituting invented estimates. A valid minimum on an admissible-search boundary is retained but labeled `ok_boundary_lower` or `ok_boundary_upper`; researchers should treat that status as a sensitivity warning rather than evidence of a precisely located interior transition.
+
+### Derived-data interface for regime figures
+
+The estimator writes two public analytical assets:
+
+- `paper_distribution_regime_fits.csv` contains one row per survey year, the selected cutoff, sample allocation, Gompertz and Pareto parameters, transformed-coordinate diagnostics, common-scale AIC/BIC values, Pareto KS distance, candidate count, criterion, and status.
+- `paper_distribution_regime_curves.parquet` contains the empirical CCDF grid, plotting transforms, regime label, cutoff, and both selected fitted curves.
+
+`outputs.py` persists these datasets and reloads them before creating any regime figure. The plotting functions accept only the reloaded frames: they neither read `data/trusted/` nor `data/refined/`, access `PipelineResults.panel`, reconstruct a CCDF, rerun MLE, or search for a cutoff. The asset-to-figure column contract is:
+
+| Figure family | Fit columns | Curve columns |
+|---|---|---|
+| Annual dual-panel regime fits | `year`, `cutoff`, `pareto_alpha_mle`, `fit_status` | `year`, `income`, `empirical_ccdf`, `gompertz_transform`, `regime`, `gompertz_fitted_transform`, `pareto_fitted_ccdf` |
+| Gompertz B history | `year`, `gompertz_B`, `fit_status` | None |
+| Pareto alpha history | `year`, `pareto_alpha_mle`, `fit_status` | None |
+| Cutoff history | `year`, `cutoff`, `fit_status` | None |
+
+The strict flow is therefore:
+
+```text
+data/trusted/
+      │
+      ▼
+regime_analysis.py  (one estimation pass)
+      │
+      ├── paper_distribution_regime_fits.csv
+      └── paper_distribution_regime_curves.parquet
+                       │
+                       ▼
+                  plotting.py
+                       │
+                       ▼
+                     PNGs
+```
+
 Current estimators are record-weighted. Population inference requires the appropriate PNAD survey weights and design information; the present implementation should therefore be interpreted as analysis of the harmonized records rather than a survey-design-corrected population estimator.
 
 ## Analytical flow
@@ -94,5 +151,6 @@ scientific pipeline
       ├── CCDF
       ├── Lorenz curves
       ├── inequality indices
+      ├── Gompertz-Pareto regime fits
       └── paper_* outputs
 ```
