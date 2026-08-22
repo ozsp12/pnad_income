@@ -402,6 +402,57 @@ def plot_distribution_cutoff_history(fits: pd.DataFrame, figsize=(11, 5.5)):
     )
 
 
+def plot_regime_r2_history(fits: pd.DataFrame, figsize=(11, 5.5)):
+    """Plot annual Gompertz and Pareto R-squared values with their means."""
+    columns = {"year", "gompertz_r2", "pareto_r2", "fit_status"}
+    _require_columns(fits, columns, "Regime fits")
+    frame = fits.sort_values("year").copy()
+    valid = frame["fit_status"].astype(str).str.startswith("ok")
+    for column in ("gompertz_r2", "pareto_r2"):
+        frame[column] = pd.to_numeric(frame[column], errors="coerce").where(valid)
+    if frame[["gompertz_r2", "pareto_r2"]].notna().sum().eq(0).any():
+        raise ValueError("Valid Gompertz and Pareto R-squared values are required.")
+
+    full_years = np.arange(int(frame["year"].min()), int(frame["year"].max()) + 1)
+    series = (
+        ("gompertz_r2", "Gompertz R²", "#4C78A8"),
+        ("pareto_r2", "Pareto R²", "#F28E2B"),
+    )
+    fig, ax = plt.subplots(figsize=figsize)
+    for column, label, color in series:
+        mean = float(frame[column].mean())
+        _annual_line_with_gaps(
+            ax,
+            frame[["year", column]],
+            column,
+            years=full_years,
+            label=label,
+            marker="o",
+            markersize=3.5,
+            linewidth=1.5,
+            color=color,
+        )
+        ax.axhline(
+            mean,
+            color=color,
+            linestyle="--",
+            linewidth=1.4,
+            alpha=0.85,
+            label=f"{label} mean ({mean:.3f})",
+        )
+
+    ax.set(
+        xlabel="Year",
+        ylabel="Coefficient of determination (R²)",
+        title="Gompertz and Pareto regression R²",
+        ylim=(0, 1),
+    )
+    ax.grid(True, alpha=0.25)
+    ax.legend(frameon=False, ncol=2)
+    fig.tight_layout()
+    return fig
+
+
 def plot_histogram(df, year, value_col="income", bins=100, yscale="log", figsize=(7, 4.5)):
     if yscale not in {"linear", "log"}:
         raise ValueError("yscale must be 'linear' or 'log'.")

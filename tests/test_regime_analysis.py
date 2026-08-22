@@ -15,6 +15,7 @@ from plotting import (
     plot_distribution_regime_fits,
     plot_gompertz_parameter_history,
     plot_pareto_alpha_history,
+    plot_regime_r2_history,
 )
 from regime_analysis import (
     RegimeFitConfig,
@@ -112,6 +113,27 @@ def test_annual_summary_has_one_consistent_row_per_year():
     assert set(curves["year"]) == {2024, 2025}
 
 
+def test_regime_r2_history_has_two_series_and_two_mean_lines():
+    fits = pd.DataFrame(
+        {
+            "year": [2022, 2023, 2024],
+            "gompertz_r2": [0.60, 0.75, 0.90],
+            "pareto_r2": [0.70, 0.80, 0.90],
+            "fit_status": ["ok", "ok_boundary_lower", "ok"],
+        }
+    )
+    figure = plot_regime_r2_history(fits)
+    lines = figure.axes[0].lines
+    assert len(lines) == 4
+    assert {line.get_label() for line in lines[:2]} != {line.get_label() for line in lines[2:]}
+    means = [line for line in lines if line.get_linestyle() == "--"]
+    assert len(means) == 2
+    assert np.allclose(means[0].get_ydata(), 0.75)
+    assert np.allclose(means[1].get_ydata(), 0.80)
+    assert figure.axes[0].get_ylim() == (0.0, 1.0)
+    plt.close(figure)
+
+
 def test_persisted_assets_reproduce_all_plots_without_microdata(tmp_path, monkeypatch):
     original_microdata = pd.DataFrame({"year": 2025, "income": _piecewise_sample()})
     fits, curves = fit_distribution_regimes(original_microdata, config=_config())
@@ -140,6 +162,7 @@ def test_persisted_assets_reproduce_all_plots_without_microdata(tmp_path, monkey
             plot_gompertz_parameter_history(restored_fits),
             plot_pareto_alpha_history(restored_fits),
             plot_distribution_cutoff_history(restored_fits),
+            plot_regime_r2_history(restored_fits),
         ]
     )
     for index, figure in enumerate(figures):
